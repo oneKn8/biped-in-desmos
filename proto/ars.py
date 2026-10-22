@@ -28,7 +28,7 @@ def rollout(W, T=300, record=False):
         alive = np.where(down, 0.0, alive)
         alive_t += alive * sim.DT
         if record: traj.append(pos[0].copy())
-    fit = dist + 0.3 * alive_t
+    fit = dist + sim.ALIVE_W * alive_t
     return fit, dist, switches, alive_t, traj
 
 def main(gens=300, N=16, b=8, nu=0.04, alpha=0.03, seed=0, T=300):

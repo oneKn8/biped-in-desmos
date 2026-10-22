@@ -23,6 +23,7 @@ MOTOR_K = 0.35
 FRICTION = 0.85          # fraction of horizontal slip removed while a mass is on the ground
 CLOCK_HZ = 1.1
 N_OBS = 13
+ALIVE_W = 1.0           # fitness = distance before falling + ALIVE_W * seconds upright
 N_ACT = 4
 
 
