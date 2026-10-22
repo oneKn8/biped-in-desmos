@@ -9,7 +9,13 @@ Data flows numpy -> page easily (file upload) but page -> here only in small pie
   history  Re-scores mean parameters read from a full Desmos run (52 numbers for each chosen generation)
            with the numpy rollout and the strict bar, and compares with the graph's own distances.
 
+  window / exam  The same for the long-walk graph (gen_desmos --long): "window" is a 5 s window that
+           continues a walk (start pose and clock offset carried from THETA's own 5 s walk from rest; also
+           checks the next carry the graph computes), "exam" is a 20 s exam from rest that ends when the
+           mean row falls.
+
 Usage: python3 check_desmos.py prepare THETA.npy|zero SEED graph.json expected.json [--dirs 64 --top 32]
+       python3 check_desmos.py window|exam THETA.npy SEED graph.json expected.json [--dirs 48 --top 24]
        python3 check_desmos.py history run.json
 """
 import argparse
@@ -56,6 +62,61 @@ def prepare(theta_arg, seed, graph_out, expected_out, N, b, nu=0.12, alpha=0.15)
           f"air {out['air_frac'][-1]:.3f}  pass {exp['P_s']}  fallen in population {int(out['fallen'][:-1].sum())}/{2 * N}")
 
 
+def literal_points(pos):
+    """(R, M, 2) array -> the graph's mass-major point-list literal."""
+    R = pos.shape[0]
+    return "\\left[" + ",".join(rf"\left({gen_desmos.fx(pos[i, m, 0])},{gen_desmos.fx(pos[i, m, 1])}\right)"
+                                 for m in range(sim.M) for i in range(R)) + "\\right]"
+
+
+def set_latex(st, prefix, latex):
+    hits = [e for e in st["expressions"]["list"] if e.get("latex", "").startswith(prefix)]
+    if len(hits) != 1:
+        raise SystemExit(f"expected exactly one expression starting with {prefix!r}, found {len(hits)}")
+    hits[0]["latex"] = latex
+
+
+def prepare_long(kind, theta_path, seed, graph_out, expected_out, N, b, nu1=0.12, nu2=0.08, alpha1=0.15, alpha2=0.08):
+    """One long-walk episode in numpy with the graph's layout; the graph gets numpy's noise and start."""
+    theta = np.load(theta_path).reshape(sim.N_ACT, sim.N_OBS)
+    delta = np.random.default_rng(seed).standard_normal((N, sim.N_ACT, sim.N_OBS))
+    R = 2 * N + 1
+    if kind == "window":                     # continue the policy's own 5 s walk from rest; past the first pass
+        T, exam, P_e, nu = 300, 0, 1, nu2
+        first = ars.rollout(theta[None], 300)
+        p0, q0 = ars.carry(first, 0)
+        t0 = float(np.mod(300 * sim.DT + 0.0, 1.0 / sim.CLOCK_HZ))
+        start = (np.repeat(p0[None], R, 0), np.repeat(q0[None], R, 0))
+    else:                                    # exam from rest, before any pass
+        T, exam, P_e, nu = 1200, 1, 0, nu1
+        t0, start = None, None
+    W = np.concatenate([theta + nu * delta, theta - nu * delta, theta[None]])
+    out = ars.rollout(W, T, start=start, t0=None if t0 is None else np.full(R, t0), cut=bool(exam))
+    passed = int(ars.passes(out, T)[-1])
+    st = gen_desmos.build(theta=theta, n_dir=N, top=b, playing=False, long_walk=True, nu=nu1, alpha=alpha1, nu2=nu2, alpha2=alpha2)
+    D = delta.reshape(N, -1).T.reshape(-1)
+    set_latex(st, "D=", "D=\\left[" + ",".join(gen_desmos.fx(v) for v in D) + "\\right]")
+    set_latex(st, "X_{e}=", f"X_{{e}}={exam}")
+    set_latex(st, "P_{e}=", f"P_{{e}}={P_e}")
+    if start is not None:
+        set_latex(st, "S=", "S=" + literal_points(start[0]))
+        set_latex(st, "Q=", "Q=" + literal_points(start[1]))
+        set_latex(st, "t_{0}=", "t_{0}=" + gen_desmos.fx(t0))
+    st["expressions"]["ticker"]["handlerLatex"] = "\\left\\{k\\le T_{e}:A_{c}\\right\\}"
+    json.dump(st, open(graph_out, "w"), separators=(",", ":"))
+    exp = dict(F_s=out["fit"].tolist(), F_d=out["dist"].tolist(), F_air=out["air_t"].tolist(),
+               A=out["alive"].tolist(), P_s=passed,
+               w_n=update(theta, out["fit"], delta, N, b, alpha2 if (P_e or passed) else alpha1).reshape(-1).tolist())
+    if kind == "window":                     # what the graph should carry into the next window if this one passed
+        p1, q1 = ars.carry(out)
+        exp["next_S"] = np.repeat(p1[None], R, 0).transpose(1, 0, 2).reshape(-1, 2).tolist()
+        exp["next_Q"] = np.repeat(q1[None], R, 0).transpose(1, 0, 2).reshape(-1, 2).tolist()
+        exp["next_t0"] = float(np.mod(T * sim.DT + t0, 1.0 / sim.CLOCK_HZ))
+    json.dump(exp, open(expected_out, "w"))
+    print(f"{kind}: mean row dist {out['dist'][-1]:.4f} m, fell {bool(out['fallen'][-1])}, phases L{int(out['n_left'][-1])} "
+          f"R{int(out['n_right'][-1])}, pass {passed}; fallen in population {int(out['fallen'][:-1].sum())}/{2 * N}")
+
+
 def history(path):
     """d = {"w0": {"<g>": [52 numbers], ...} for chosen generations, "F_h": [graph distance per generation], "stopped_at": g}."""
     d = json.load(open(path))
@@ -75,7 +136,7 @@ def history(path):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("mode", choices=["prepare", "history"])
+    ap.add_argument("mode", choices=["prepare", "window", "exam", "history"])
     ap.add_argument("args", nargs="+")
     ap.add_argument("--dirs", type=int, default=64)
     ap.add_argument("--top", type=int, default=32)
@@ -83,5 +144,8 @@ if __name__ == "__main__":
     if a.mode == "prepare":
         th, seed, g_out, e_out = a.args
         prepare(th, int(seed), g_out, e_out, a.dirs, a.top)
+    elif a.mode in ("window", "exam"):
+        th, seed, g_out, e_out = a.args
+        prepare_long(a.mode, th, int(seed), g_out, e_out, a.dirs, a.top)
     else:
         history(a.args[0])

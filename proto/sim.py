@@ -78,7 +78,7 @@ def observe(pos, prev, t):
     P = pos.shape[0]
     return np.stack([torso_ang, 0.1 * torso_w, ja[:, 0], ja[:, 1], ja[:, 2], ja[:, 3],
                      pos[:, HIP, 1] - 0.85, 0.5 * hip_vx, contact_l, contact_r,
-                     np.full(P, np.sin(ph)), np.full(P, np.cos(ph)), np.ones(P)], 1)
+                     np.broadcast_to(np.sin(ph), (P,)), np.broadcast_to(np.cos(ph), (P,)), np.ones(P)], 1)
 
 
 def targets(act):

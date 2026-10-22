@@ -1,0 +1,46 @@
+Per run:
+
+| config | recipe | 20 s pass | median ticks to 20 s pass (IQR) | p90 / worst | Desmos min median / p90 / worst | passers re-checked: 20 s / 60 s bar | jittered 20 s pass rate | limp | lean deg | oracle median |
+|---|---|---|---|---|---|---|---|---|---|---|
+| L_chain2_cut_dec_P96_cap10 | P96/b24 nu0.12 a0.15 stages 5-20s streak2 demote chain[1,0] cut[0,1] after-pass nu0.08 a0.08 cap1m/s | 8/8 | 25.7k (15.6k-39.7k) | 53.9k / 63.2k | 15 / 31 / 36 | 8/8 , 1/8 (ref) | 0.31 | 0.383 | -15.0 | 12.6k |
+| L_chain2_cut_dec_P96 | P96/b24 nu0.12 a0.15 stages 5-20s streak2 demote chain[1,0] cut[0,1] after-pass nu0.08 a0.08 | 8/8 | 26.6k (23.6k-29.9k) | 40.9k / 49.0k | 15 / 23 / 28 | 8/8 , 2/8 (ref) | 0.45 | 0.384 | -15.3 | 12.9k |
+| L_chain2_cut_avg7 | P128/b32 nu0.12 a0.15 stages 5-20s streak2 demote chain[1,0] cut[0,1] avg0.7 | 8/8 | 29.5k (20.3k-36.9k) | 57.4k / 87.7k | 20 / 38 / 57 | 8/8 , 1/8 (ref) | - | 0.385 | -12.7 | 20.2k |
+| L_chain2_cut_dec_P96_f2 | P96/b24 nu0.12 a0.15 stages 5-20s streak2 final2 demote chain[1,0] cut[0,1] after-pass nu0.08 a0.08 | 8/8 | 30.0k (24.8k-34.1k) | 43.0k / 53.2k | 17 / 25 / 30 | 8/8 , 4/8 (ref) | 0.64 | 0.388 | -14.3 | 12.9k |
+| L_chain2_cut_dec_P96_cap12 | P96/b24 nu0.12 a0.15 stages 5-20s streak2 demote chain[1,0] cut[0,1] after-pass nu0.08 a0.08 cap1.2m/s | 8/8 | 30.1k (23.5k-35.0k) | 41.9k / 57.4k | 17 / 24 / 33 | 8/8 , 1/8 (ref) | 0.47 | 0.436 | -14.5 | 14.9k |
+| L_chain2_cut_avg7_c16 | P128/b32 nu0.12 a0.15 stages 5-20s streak2 demote chain[1,0] cut[0,1] avg0.7 | 15/16 | 30.4k (21.8k-38.6k) | 51.5k / inf | 20 / 34 / - | 14/15 , 1/15 (ref) | - | 0.424 | -12.6 | 22.3k |
+| L_chain2_cut_dec_c16 | P128/b32 nu0.12 a0.15 stages 5-20s streak2 demote chain[1,0] cut[0,1] after-pass nu0.08 a0.08 | 16/16 | 32.0k (17.8k-37.0k) | 59.4k / 85.3k | 21 / 39 / 55 | 16/16 , 4/16 (ref) | 0.29 | 0.402 | -15.5 | 16.2k |
+| L_chain2_cut_dec_P64 | P64/b16 nu0.12 a0.15 stages 5-20s streak2 demote chain[1,0] cut[0,1] after-pass nu0.08 a0.08 | 7/8 | 34.0k (27.5k-60.8k) | inf / inf | 14 / - / - | 7/7 , 1/7 (ref) | - | 0.420 | -21.8 | 29.6k |
+| L_chain2_cut_dec | P128/b32 nu0.12 a0.15 stages 5-20s streak2 demote chain[1,0] cut[0,1] after-pass nu0.08 a0.08 | 8/8 | 34.3k (24.7k-46.8k) | 52.8k / 54.0k | 23 / 35 / 35 | 8/8 , 1/8 (ref) | 0.38 | 0.381 | -14.9 | 15.0k |
+| L_chain2_cut_dec_P96_c16 | P96/b24 nu0.12 a0.15 stages 5-20s streak2 demote chain[1,0] cut[0,1] after-pass nu0.08 a0.08 | 16/16 | 34.5k (24.4k-50.2k) | 105.6k / 138.7k | 20 / 59 / 78 | 16/16 , 1/16 (ref) | 0.38 | 0.392 | -16.6 | 20.2k |
+| L_chain2_cut | P128/b32 nu0.12 a0.15 stages 5-20s streak2 demote chain[1,0] cut[0,1] | 8/8 | 36.0k (24.5k-48.7k) | 60.8k / 87.3k | 24 / 40 / 57 | 8/8 , 4/8 (ref) | 0.45 | 0.420 | -16.7 | 22.2k |
+| L_chain1_cut_dec | P128/b32 nu0.12 a0.15 stages 5-20s demote chain[1,0] cut[0,1] after-pass nu0.08 a0.08 | 8/8 | 36.1k (27.9k-51.1k) | 64.2k / 72.4k | 24 / 42 / 47 | 8/8 , 0/8 (ref) | - | 0.420 | -12.7 | 25.3k |
+| L_chain2_cut_asym | P128/b32 nu0.12 a0.15 stages 5-20s streak2 demote chain[1,0] cut[0,1] asym0.5 | 8/8 | 38.5k (26.9k-52.2k) | 82.9k / 89.1k | 25 / 54 / 58 | 8/8 , 3/8 (ref) | - | 0.324 | -14.8 | 22.8k |
+| L_chain2_cut_dec_avg8 | P128/b32 nu0.12 a0.15 stages 5-20s streak2 demote chain[1,0] cut[0,1] after-pass nu0.08 a0.08 avg0.8 | 8/8 | 39.1k (37.0k-44.7k) | 51.7k / 67.0k | 26 / 34 / 44 | 8/8 , 0/8 (ref) | - | 0.392 | -13.8 | 21.9k |
+| L_chain4 | P128/b32 nu0.12 a0.15 stages 5-20s streak4 demote chain[1,0] | 7/8 | 41.9k (30.3k-57.6k) | inf / inf | 28 / - / - | 6/7 , 2/7 (ref) | - | 0.493 | -16.4 | 22.3k |
+| L_chain2_cut_dec_P96_f2_c16 | P96/b24 nu0.12 a0.15 stages 5-20s streak2 final2 demote chain[1,0] cut[0,1] after-pass nu0.08 a0.08 | 14/16 | 42.9k (29.6k-72.1k) | inf / inf | 25 / - / - | 14/14 , 6/14 (ref) | 0.76 | 0.366 | -16.2 | 20.2k |
+| L_chain1_cut | P128/b32 nu0.12 a0.15 stages 5-20s demote chain[1,0] cut[0,1] | 7/8 | 44.2k (36.5k-59.1k) | inf / inf | 29 / - / - | 6/7 , 1/7 (ref) | - | 0.453 | -13.1 | 26.5k |
+| L_chain4_cut | P128/b32 nu0.12 a0.15 stages 5-20s streak4 demote chain[1,0] cut[0,1] | 8/8 | 51.3k (30.6k-65.8k) | 77.3k / 79.1k | 34 / 50 / 51 | 6/8 , 1/8 (ref) | - | 0.412 | -15.3 | 22.3k |
+| L_s5_10_20 | P128/b32 nu0.12 a0.15 stages 5-10-20s | 7/8 | 71.3k (57.6k-92.0k) | inf / inf | 46 / - / - | 7/7 , 2/7 (ref) | - | 0.439 | -17.5 | 59.8k |
+
+Same recipe, seeds pooled:
+
+| config | recipe | 20 s pass | median ticks to 20 s pass (IQR) | p90 / worst | Desmos min median / p90 / worst | passers re-checked: 20 s / 60 s bar | jittered 20 s pass rate | limp | lean deg | oracle median |
+|---|---|---|---|---|---|---|---|---|---|---|
+| L_chain2_cut_dec_P96 + L_chain2_cut_dec_P96_c16 | P96/b24 nu0.12 a0.15 stages 5-20s streak2 demote chain[1,0] cut[0,1] after-pass nu0.08 a0.08 | 24/24 | 28.3k (24.4k-42.0k) | 72.6k / 138.7k | 16 / 41 / 78 | 24/24 , 3/24 (ref) | 0.40 | 0.392 | -15.8 | 18.0k |
+| L_chain2_cut_avg7 + L_chain2_cut_avg7_c16 | P128/b32 nu0.12 a0.15 stages 5-20s streak2 demote chain[1,0] cut[0,1] avg0.7 | 23/24 | 29.9k (21.4k-38.6k) | 51.9k / inf | 20 / 34 / - | 22/23 , 2/23 (ref) | - | 0.408 | -12.6 | 21.2k |
+| L_chain2_cut_dec + L_chain2_cut_dec_c16 | P128/b32 nu0.12 a0.15 stages 5-20s streak2 demote chain[1,0] cut[0,1] after-pass nu0.08 a0.08 | 24/24 | 32.0k (17.8k-42.0k) | 55.8k / 85.3k | 21 / 37 / 55 | 24/24 , 5/24 (ref) | 0.32 | 0.399 | -15.5 | 15.2k |
+| L_chain2_cut_dec_P96_f2 + L_chain2_cut_dec_P96_f2_c16 | P96/b24 nu0.12 a0.15 stages 5-20s streak2 final2 demote chain[1,0] cut[0,1] after-pass nu0.08 a0.08 | 22/24 | 35.9k (25.9k-52.8k) | 91.6k / inf | 21 / 52 / - | 22/22 , 10/22 (ref) | 0.72 | 0.366 | -15.4 | 18.0k |
+
+Stopped before finishing (state at the last checkpoint):
+
+| config | recipe | passed so far | median ticks spent per seed | ticks to pass of the passed seeds | last mean-row episode per seed (upright s / m) |
+|---|---|---|---|---|---|
+| L_chain2_cut_b64 | P128/b64 nu0.12 a0.15 stages 5-20s streak2 demote chain[1,0] cut[0,1] | 5/8 | 49.1k | 32.3k, 34.9k, 36.5k, 42.7k, 53.0k | 20/20 20/18 5/5 2/2 5/4 20/18 20/19 20/18 |
+| L_chain2_cut_dec_P96_f2_asym | P96/b24 nu0.12 a0.15 stages 5-20s streak2 final2 demote chain[1,0] cut[0,1] after-pass nu0.08 a0.08 asym0.5 | 4/8 | 47.6k | 33.3k, 40.4k, 41.5k, 42.6k | 20/17 20/17 20/16 2/3 20/17 2/3 5/4 5/5 |
+| L_direct20 | P128/b32 nu0.12 a0.15 stages 20s | 0/8 | 47.2k | - | 20/10 20/9 20/13 20/8 20/9 20/12 20/7 20/9 |
+| L_pace20_D2 | P128/b32 nu0.12 a0.15 stages 20s cut[1] pacecut2m | 0/8 | 7.2k | - | 1/2 1/2 2/5 1/2 1/2 1/2 1/2 1/2 |
+| L_s5_20_cut | P128/b32 nu0.12 a0.15 stages 5-20s cut[0,1] | 4/8 | 32.3k | 25.4k, 26.6k, 34.1k, 74.5k | 20/16 1/3 20/17 20/20 3/6 20/18 2/4 2/4 |
+| L_s5_20_cutD2 | P128/b32 nu0.12 a0.15 stages 5-20s cut[0,1] pacecut2m | 3/8 | 31.4k | 12.0k, 26.6k, 34.1k | 20/19 2/3 20/17 20/20 2/3 1/2 2/5 4/5 |
+| L_s5_20_pace_cut | P128/b32 nu0.12 a0.15 stages 5-20s cut[0,1] pace0.5@0.9 | 3/8 | 64.6k | 15.1k, 19.8k, 37.3k | 2/5 3/5 3/6 20/18 4/8 20/17 2/4 20/17 |
+| L_sym_chain2_cut_dec_P96 | P96/b24 nu0.12 a0.15 stages 5-20s streak2 demote chain[1,0] cut[0,1] after-pass nu0.08 a0.08 SYM | 1/8 | 91.5k | 37.1k | 5/13 5/13 2/3 2/3 5/7 2/3 5/12 20/22 |
+| L_sym_s5_10_20 | P128/b32 nu0.12 a0.15 stages 5-10-20s SYM | 1/8 | 37.6k | 60.1k | 6/9 4/6 4/5 2/2 3/9 2/3 3/7 20/24 |

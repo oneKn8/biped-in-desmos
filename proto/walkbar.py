@@ -48,7 +48,12 @@ class PhaseTracker:
         self.side[:] = -1
 
 
-def strict_bar(dist, horizon_s, ever_fallen, n_left, n_right, air_frac):
-    """Elementwise over rollouts (or scalars)."""
-    return ((dist / horizon_s >= BAR_SPEED) & (~ever_fallen) & (n_left >= BAR_PHASES)
-            & (n_right >= BAR_PHASES) & (air_frac < BAR_AIR))
+def phases_needed(horizon_s):
+    """BAR_PHASES per foot per 5 s of horizon (3 over 5 s, 12 over 20 s, 36 over 60 s)."""
+    return int(round(BAR_PHASES * horizon_s / 5.0))
+
+
+def strict_bar(dist, horizon_s, ever_fallen, n_left, n_right, air_frac, phases=BAR_PHASES):
+    """Elementwise over rollouts (or scalars). phases: per foot over the whole horizon."""
+    return ((dist / horizon_s >= BAR_SPEED) & (~ever_fallen) & (n_left >= phases)
+            & (n_right >= phases) & (air_frac < BAR_AIR))

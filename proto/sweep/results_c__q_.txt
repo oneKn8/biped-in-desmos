@@ -1,0 +1,14 @@
+| config | recipe | pass | median ticks-to-bar (IQR) | est. Desmos min | post-pass rate | final speed m/s | 10 s robust |
+|---|---|---|---|---|---|---|---|
+| q_sym_P384_a15 | P384/b96 nu0.08 a0.15 dt1/60 it4 ep5s aw0 air3>15% ET SYM | 8/8 | 4.8k (3.4k-6.1k) | 12 | 0.14 | 0.94 | 0.12 |
+| c_sym_P384_a15 | P384/b96 nu0.08 a0.15 dt1/60 it4 ep5s aw0 air3>15% ET SYM | 16/16 | 6.0k (5.0k-7.3k) | 15 | 0.15 | 1.09 | 0.12 |
+| c_P192_a15 | P192/b48 nu0.08 a0.15 dt1/60 it4 ep5s aw0 air3>15% ET | 16/16 | 6.0k (4.7k-7.1k) | 15 | 0.35 | 0.87 | 0.31 |
+| c_P192_a15_sched | P192/b48 nu0.08 a0.15 dt1/60 it4 ep5s aw0 air3>15% ET sched5-10/60g | 16/16 | 6.1k (3.8k-7.5k) | 15 | 0.35 | 0.83 | 0.44 |
+| q_P192_a15_nu12 | P192/b48 nu0.12 a0.15 dt1/60 it4 ep5s aw0 air3>15% ET | 8/8 | 6.5k (5.5k-7.9k) | 16 | 0.38 | 0.92 | 0.25 |
+| q_P192_a15_sched | P192/b48 nu0.08 a0.15 dt1/60 it4 ep5s aw0 air3>15% ET sched5-10/60g | 8/8 | 6.6k (4.3k-10.1k) | 17 | 0.25 | 0.73 | 0.12 |
+| q_sym_P384_a25 | P384/b96 nu0.08 a0.25 dt1/60 it4 ep5s aw0 air3>15% ET SYM | 8/8 | 6.8k (6.0k-7.3k) | 17 | 0.12 | 0.82 | 0.25 |
+| c_rec | P128/b32 nu0.08 a0.1 dt1/60 it4 ep5s aw0 air3>15% ET | 16/16 | 7.0k (5.7k-7.5k) | 18 | 0.35 | 0.92 | 0.19 |
+| q_P192_a20 | P192/b48 nu0.08 a0.2 dt1/60 it4 ep5s aw0 air3>15% ET | 8/8 | 7.1k (4.2k-14.4k) | 18 | 0.23 | 0.78 | 0.00 |
+| c_f15 | P128/b32 nu0.08 a0.06 dt1/60 it4 ep5s aw0 air3>15% | 16/16 | 7.8k (6.5k-9.7k) | 20 | 0.30 | 0.94 | 0.25 |
+| q_P192_a15_nu05 | P192/b48 nu0.05 a0.15 dt1/60 it4 ep5s aw0 air3>15% ET | 8/8 | 8.9k (7.3k-11.8k) | 22 | 0.16 | 0.74 | 0.00 |
+| q_P192_a30 | P192/b48 nu0.08 a0.3 dt1/60 it4 ep5s aw0 air3>15% ET | 8/8 | 9.9k (7.0k-15.5k) | 25 | 0.09 | 0.61 | 0.00 |

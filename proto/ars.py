@@ -15,15 +15,19 @@ import sim
 import walkbar
 
 
-def rollout(W, T=300, record=False):
+def rollout(W, T=300, record=False, start=None, t0=None, cut=False):
     """W: (R, N_ACT, N_OBS). Every row runs T ticks; a fallen body freezes and stops scoring.
 
+    start = (pos, prev), each (R, M, 2), replaces the rest pose; t0 (R,) offsets the clock input in
+    seconds. cut: the last row is the mean policy, and once it has fallen every body freezes, which
+    scores the same as ending the episode there (the long-walk exam).
     Returns a dict of per-row arrays: fit (training fitness), dist, alive_t, air_t (both feet up
     while upright, seconds), air_frac (both feet up, fraction of all T ticks), fallen (ever),
-    n_left / n_right (alternating single-support phases), and traj (row 0 positions) if record.
+    n_left / n_right (alternating single-support phases), the final alive flags (0 for every body after
+    an exam cut), the final pos / prev, and traj (row 0 positions) if record.
     """
     R = W.shape[0]
-    pos, prev = sim.initial_state(R)
+    pos, prev = sim.initial_state(R) if start is None else (start[0].copy(), start[1].copy())
     x0 = pos[:, sim.HIP, 0].copy()
     alive = np.ones(R)
     dist = np.zeros(R)
@@ -34,7 +38,9 @@ def rollout(W, T=300, record=False):
     trk = walkbar.PhaseTracker(R)
     traj = []
     for k in range(T):
-        obs = sim.observe(pos, prev, k * sim.DT)
+        if cut:
+            alive = alive * alive[-1]
+        obs = sim.observe(pos, prev, k * sim.DT if t0 is None else t0 + k * sim.DT)
         act = np.tanh(np.einsum('pao,po->pa', W, obs))
         pos, prev = sim.step(pos, prev, sim.targets(act), alive)
         cl = pos[:, sim.FL, 1] < 1e-3
@@ -54,11 +60,22 @@ def rollout(W, T=300, record=False):
     air_pen = np.maximum(0.0, air_t - sim.AIR_FREE * alive_t)
     fit = dist + sim.ALIVE_W * alive_t - sim.W_AIR * air_pen
     return dict(fit=fit, dist=dist, alive_t=alive_t, air_t=air_t, air_frac=air_ticks / T, fallen=fallen,
-                n_left=trk.cnt[0], n_right=trk.cnt[1], traj=traj)
+                n_left=trk.cnt[0], n_right=trk.cnt[1], alive=alive, pos=pos, prev=prev, traj=traj)
 
 
 def passes(out, T):
-    return walkbar.strict_bar(out["dist"], T * sim.DT, out["fallen"], out["n_left"], out["n_right"], out["air_frac"])
+    """The strict bar over T ticks, phases scaled with the horizon."""
+    return walkbar.strict_bar(out["dist"], T * sim.DT, out["fallen"], out["n_left"], out["n_right"], out["air_frac"],
+                              phases=walkbar.phases_needed(T * sim.DT))
+
+
+def carry(out, row=-1):
+    """Start of a window that continues row's walk: its last pose with the hip shifted to x = 0."""
+    p, q = out["pos"][row].copy(), out["prev"][row].copy()
+    x = p[sim.HIP, 0]
+    p[:, 0] -= x
+    q[:, 0] -= x
+    return p, q
 
 
 def main(gens=200, N=64, b=32, nu=0.12, alpha=0.15, seed=0, T=300, stop_at_pass=True):
