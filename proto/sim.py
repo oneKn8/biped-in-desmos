@@ -24,7 +24,12 @@ MAX_ROT = 0.05          # cap on motor rotation per Jacobi pass (rad): a strengt
 FRICTION = 0.85          # fraction of horizontal slip removed while a mass is on the ground
 CLOCK_HZ = 1.1
 N_OBS = 13
-ALIVE_W = 1.0           # fitness = distance before falling + ALIVE_W * seconds upright
+# fitness = distance before falling + ALIVE_W * seconds upright - W_AIR * max(0, air - AIR_FREE * upright),
+# where air = seconds with both feet off the ground while upright. Chosen by the recipe sweep in
+# sweep/: an alive bonus slows learning, and the airborne penalty above 15% stops running gaits.
+ALIVE_W = 0.0
+W_AIR = 3.0
+AIR_FREE = 0.15
 N_ACT = 4
 
 
