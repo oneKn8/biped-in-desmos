@@ -20,6 +20,7 @@ G = -9.8
 DAMP = 0.995
 ITERS = 4
 MOTOR_K = 0.35
+MAX_ROT = 0.05          # cap on motor rotation per Jacobi pass (rad): a strength / joint-speed limit
 FRICTION = 0.85          # fraction of horizontal slip removed while a mass is on the ground
 CLOCK_HZ = 1.1
 N_OBS = 13
@@ -100,7 +101,7 @@ def step(pos, prev, tgt, alive):
         ja = joint_angles(pos)
         for m, (far, j, c) in enumerate(MOTORS):
             ref = tgt[:, m]          # 0 = child in line with parent (straight leg / straight knee)
-            err = wrap(ref - ja[:, m]) * MOTOR_K
+            err = np.clip(wrap(ref - ja[:, m]) * MOTOR_K, -MAX_ROT, MAX_ROT)
             # rotate child by +err/2 and parent-far by -err/2 around the joint, then move the
             # joint by minus their sum so the motor adds no net translation (no self-propulsion)
             moved = 0.0

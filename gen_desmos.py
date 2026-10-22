@@ -27,6 +27,7 @@ def f(v):
 def build(theta=None, nu=0.04, alpha=0.03, n_dir=16, top=8, episode=300, playing=True, fused=True):
     n_p = 2 * n_dir
     items, fid = [], [0]
+    draw_id = [None]
 
     def folder(title, collapsed=True):
         fid[0] += 1
@@ -37,6 +38,8 @@ def build(theta=None, nu=0.04, alpha=0.03, n_dir=16, top=8, episode=300, playing
         e = {"type": "expression", "id": f"e{len(items)}", "latex": latex, "color": style.pop("color", "#2d70b3")}
         if fold:
             e["folderId"] = fold
+        # Desmos plots any one-variable function definition, so hide everything outside Drawing
+        style.setdefault("hidden", fold != draw_id[0])
         e.update({k: (v if isinstance(v, (bool, dict)) else str(v)) for k, v in style.items()})
         items.append(e)
 
@@ -131,21 +134,34 @@ def build(theta=None, nu=0.04, alpha=0.03, n_dir=16, top=8, episode=300, playing
         # one expression per Jacobi pass: per-expression overhead (~1.3 ms) dominates Desmos's
         # cost, per-element math is nearly free, so duplicated work inside functions is cheaper
         ex(r"c_{b}\left(U,V,L\right)=0.5\left(1-\frac{L}{\operatorname{distance}\left(U,V\right)}\right)\left(V-U\right)", Y)
-        ex(rf"z_{{e}}\left(F,J,C,q\right)={f(sim.MOTOR_K)}w_{{r}}\left(q-w_{{r}}\left(l_{{a}}\left(C-J\right)-l_{{a}}\left(J-F\right)\right)\right)", Y)
+        ex(rf"z_{{e}}\left(F,J,C,q\right)=\max\left(-{f(sim.MAX_ROT)},\min\left({f(sim.MAX_ROT)},{f(sim.MOTOR_K)}w_{{r}}\left(q-w_{{r}}\left(l_{{a}}\left(C-J\right)-l_{{a}}\left(J-F\right)\right)\right)\right)\right)", Y)
         ex(r"m_{c}\left(F,J,C,q\right)=R\left(C,J,0.5z_{e}\left(F,J,C,q\right)\right)-C", Y)
         ex(r"m_{f}\left(F,J,C,q\right)=R\left(F,J,-0.5z_{e}\left(F,J,C,q\right)\right)-F", Y)
         ex(r"k_{g}\left(V\right)=\left(V.x,\max\left(V.y,0\right)\right)", Y)
+        ex(r"r_{c}\left(C,J,u\right)=R\left(C,J,0.5u\right)-C", Y)
+        ex(r"r_{f}\left(F,J,u\right)=R\left(F,J,-0.5u\right)-F", Y)
         for it in range(sim.ITERS):
             src = f"S_{{v{it}}}"
             B = [h(src, m) for m in range(sim.M)]
             corr = [[] for _ in range(sim.M)]
-            for a, b, L in sim.BONES:
-                term = rf"c_{{b}}\left({B[a]},{B[b]},{f(L)}\right)"
-                corr[a].append("+" + term); corr[b].append("-" + term)
+            # packed per pass: bone corrections (5 blocks), motor errors (4), motor deltas (8)
+            Cn, En, Mn = f"C_{{b{it}}}", f"E_{{m{it}}}", f"M_{{d{it}}}"
+            bones_l = ",".join(rf"c_{{b}}\left({B[a]},{B[b]},{f(L)}\right)" for a, b, L in sim.BONES)
+            errs_l = ",".join(rf"z_{{e}}\left({B[far]},{B[j]},{B[c]},q_{{{mi + 1}}}\right)" for mi, (far, j, c) in enumerate(sim.MOTORS))
+            ex(Cn + r"=\operatorname{join}\left(" + bones_l + r"\right)", Y)
+            ex(En + r"=\operatorname{join}\left(" + errs_l + r"\right)", Y)
+            deltas = []
             for mi, (far, j, c) in enumerate(sim.MOTORS):
-                args = rf"\left({B[far]},{B[j]},{B[c]},q_{{{mi + 1}}}\right)"
-                corr[c].append(rf"+m_{{c}}{args}"); corr[far].append(rf"+m_{{f}}{args}")
-                corr[j].append(rf"-m_{{c}}{args}-m_{{f}}{args}")
+                e_mi = h(En, mi)
+                deltas.append(rf"r_{{c}}\left({B[c]},{B[j]},{e_mi}\right)")
+                deltas.append(rf"r_{{f}}\left({B[far]},{B[j]},{e_mi}\right)")
+            ex(Mn + r"=\operatorname{join}\left(" + ",".join(deltas) + r"\right)", Y)
+            for bi, (a, b, L) in enumerate(sim.BONES):
+                corr[a].append("+" + h(Cn, bi)); corr[b].append("-" + h(Cn, bi))
+            for mi, (far, j, c) in enumerate(sim.MOTORS):
+                dc, df = h(Mn, 2 * mi), h(Mn, 2 * mi + 1)
+                corr[c].append("+" + dc); corr[far].append("+" + df)
+                corr[j].append(f"-{dc}-{df}")
             parts = [rf"k_{{g}}\left({B[m]}+\frac{{1}}{{{int(cnt[m])}}}\left({''.join(corr[m]).lstrip('+')}\right)\right)" for m in range(sim.M)]
             nxt = f"S_{{v{it + 1}}}" if it < sim.ITERS - 1 else "S_{k}"
             ex(rf"{nxt}=\operatorname{{join}}\left({','.join(parts)}\right)", Y, hidden=True)
@@ -159,7 +175,7 @@ def build(theta=None, nu=0.04, alpha=0.03, n_dir=16, top=8, episode=300, playing
             corr[a].append(f"+{name}"); corr[b].append(f"-{name}")
         for mi, (far, j, c) in enumerate(sim.MOTORS):
             err = f"u_{{{it}{mi}}}"
-            ex(rf"{err}={f(sim.MOTOR_K)}w_{{r}}\left(q_{{{mi + 1}}}-w_{{r}}\left(l_{{a}}\left({B[c]}-{B[j]}\right)-l_{{a}}\left({B[j]}-{B[far]}\right)\right)\right)", Y)
+            ex(rf"{err}=\max\left(-{f(sim.MAX_ROT)},\min\left({f(sim.MAX_ROT)},{f(sim.MOTOR_K)}w_{{r}}\left(q_{{{mi + 1}}}-w_{{r}}\left(l_{{a}}\left({B[c]}-{B[j]}\right)-l_{{a}}\left({B[j]}-{B[far]}\right)\right)\right)\right)\right)", Y)
             dc, df = f"m_{{c{it}{mi}}}", f"m_{{f{it}{mi}}}"
             ex(rf"{dc}=R\left({B[c]},{B[j]},0.5{err}\right)-{B[c]}", Y, hidden=True)
             ex(rf"{df}=R\left({B[far]},{B[j]},-0.5{err}\right)-{B[far]}", Y, hidden=True)
@@ -188,6 +204,7 @@ def build(theta=None, nu=0.04, alpha=0.03, n_dir=16, top=8, episode=300, playing
 
     # ---------------- drawing ----------------
     V = folder("Drawing", collapsed=False)
+    draw_id[0] = V
     ex(r"b_{e}=\operatorname{sort}\left(\left[1...n_{p}\right],-F_{d}\right)\left[1\right]", V)
     for a, b, _ in sim.BONES:
         ex(rf"{h('S', a)}+t\left({h('S', b)}-{h('S', a)}\right)", V, color="#c8c2b3", lineWidth=2, lineOpacity=0.35)
