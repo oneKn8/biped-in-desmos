@@ -5,7 +5,8 @@ other. Layout: positions of all individuals live in one point list S of length 6
 (all heads, then all hips, ...). Learning state is the mean parameter list w_0 plus a generation
 counter g; per-individual parameters are regenerated from seeded noise every generation.
 
-Usage: python3 gen_desmos.py out_state.json [--theta proto/theta_s0.npy --nu 0]
+Usage: python3 gen_desmos.py out_state.json [--theta proto/theta_s0.npy --nu 0] [--steps 6] [--legacy]
+The default fast layout runs 6 physics steps per ticker action; --legacy emits the original layout.
 """
 import argparse
 import json
@@ -14,7 +15,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, 'proto')
-import sim  # noqa: E402
+import sim  # noqa: E402  sim lives in proto/, which the line above puts on the path
 
 NPAR = sim.N_ACT * sim.N_OBS
 
@@ -223,15 +224,249 @@ def build(theta=None, nu=0.04, alpha=0.03, n_dir=16, top=8, episode=300, playing
     return state
 
 
+def fx(v):
+    """Shortest round-trip decimal, never exponent notation (Desmos must parse it to the same double)."""
+    return np.format_float_positional(float(v), unique=True, trim='-')
+
+
+def build_fast(theta=None, nu=0.04, alpha=0.03, n_dir=16, top=8, episode=300, playing=True, steps_per_tick=6,
+               min_step_ms=50):
+    """Same physics, policy and learning rule as build(), restructured for Desmos speed.
+
+    Measured cost model (NOTES.md, 2026-10-21/22): every statement downstream of the action-written
+    state is re-analysed by the worker on every tick and also costs main-thread progress messages;
+    the action's write-back of the S and Q literals is re-parsed every tick; after that, cost is
+    roughly per list operation. So: one vectorised formula per family (all bones at once, all motors
+    at once, all four actions at once) gathered through static index lists, the four Jacobi passes
+    nested as function calls (arguments are bound once, not substituted), several physics steps per
+    ticker action (steps_per_tick) so the write-back is paid once per tick, learning statistics moved
+    off the per-tick path (a snapshot tick feeds them), two drawing statements, every folder
+    collapsed so the expression list never re-typesets a changing value, and constants written at
+    full double precision with the same operation order as proto/sim.py.
+    """
+    n_p = 2 * n_dir
+    items, fid = [], [0]
+    draw_id = [None]
+
+    def folder(title):
+        fid[0] += 1
+        items.append({"type": "folder", "id": f"f{fid[0]}", "title": title, "collapsed": True})
+        return f"f{fid[0]}"
+
+    def ex(latex, fold=None, **style):
+        e = {"type": "expression", "id": f"e{len(items)}", "latex": latex, "color": style.pop("color", "#2d70b3")}
+        if fold:
+            e["folderId"] = fold
+        style.setdefault("hidden", fold != draw_id[0])
+        e.update({k: (v if isinstance(v, (bool, dict)) else str(v)) for k, v in style.items()})
+        items.append(e)
+
+    def blocks(ms):
+        """Index list selecting mass blocks ms (in order) of a mass-major list."""
+        return r"\operatorname{join}\left(" + ",".join(rf"\left[1...n_{{p}}\right]+{m}n_{{p}}" for m in ms) + r"\right)"
+
+    def consts(vals):
+        return r"\operatorname{join}\left(" + ",".join(rf"0\cdot\left[1...n_{{p}}\right]+{fx(v)}" for v in vals) + r"\right)"
+
+    DT = fx(sim.DT)
+    items.append({"type": "text", "id": "t0", "text": "A population of ragdoll bipeds learns to walk. Physics, neural policy and the "
+                  "learning rule are all Desmos expressions. Press play on the ticker. g = generation, k = tick in the episode."})
+
+    # ---------------- learning (changes once per generation) ----------------
+    F = folder("Learning (ARS: mean parameters, seeded noise, top-b update)")
+    ex(rf"n_{{d}}={n_dir}", F); ex(r"n_{p}=2n_{d}", F); ex(rf"b_{{t}}={top}", F)
+    ex(rf"T_{{e}}={episode}", F); ex(rf"\nu={fx(nu)}", F); ex(rf"\alpha={fx(alpha)}", F)
+    ex(r"g=0", F); ex(r"k=0", F)
+    w0 = np.zeros(NPAR) if theta is None else np.asarray(theta, float).reshape(-1)
+    ex(r"w_{0}=\left[" + ",".join(fx(v) for v in w0) + r"\right]", F)
+    ex(r"U_{1}=\operatorname{random}\left(" + str(NPAR) + r"n_{d},2g+1\right)", F)
+    ex(r"U_{2}=\operatorname{random}\left(" + str(NPAR) + r"n_{d},2g+2\right)", F)
+    ex(r"D=\sqrt{-2\ln\left(1-U_{1}\right)}\cos\left(2\pi U_{2}\right)", F)
+    ex(r"p_{f}\left(j\right)=\operatorname{floor}\left(\frac{j-1}{n_{p}}\right)", F)
+    ex(r"i_{f}\left(j\right)=j-n_{p}p_{f}\left(j\right)", F)
+    ex(r"s_{g}\left(i\right)=\left\{i\le n_{d}:1,-1\right\}", F)
+    ex(r"W=\left[w_{0}\left[p_{f}\left(j\right)+1\right]+\nu s_{g}\left(i_{f}\left(j\right)\right)"
+       r"D\left[n_{d}p_{f}\left(j\right)+\operatorname{mod}\left(i_{f}\left(j\right)-1,n_{d}\right)+1\right]"
+       r"\operatorname{for}j=\left[1..." + str(NPAR) + r"n_{p}\right]\right]", F)
+    ex(r"v\left(p\right)=W\left[pn_{p}+1...pn_{p}+n_{p}\right]", F)
+    # policy weights regrouped once per generation so one tick evaluates all 4 actions as 4n_p-long lists
+    ex(r"W_{q}=\operatorname{join}\left(" + ",".join(
+        rf"v\left({a * sim.N_OBS + o}\right)" for o in range(sim.N_OBS) for a in range(sim.N_ACT)) + r"\right)", F)
+    # F_s is a fitness snapshot written once per episode, so none of this re-runs per tick
+    ex(r"F_{s}=0\cdot\left[1...n_{p}\right]", F)
+    ex(r"r_{p}=F_{s}\left[1...n_{d}\right]", F)
+    ex(r"r_{m}=F_{s}\left[n_{d}+1...n_{p}\right]", F)
+    ex(r"O_{t}=\operatorname{sort}\left(\left[1...n_{d}\right],-\max\left(r_{p},r_{m}\right)\right)\left[1...b_{t}\right]", F)
+    ex(r"\sigma_{r}=\operatorname{stdevp}\left(\operatorname{join}\left(r_{p}\left[O_{t}\right],r_{m}\left[O_{t}\right]\right)\right)+10^{-8}", F)
+    ex(r"w_{n}=\left[w_{0}\left[p\right]+\frac{\alpha}{b_{t}\sigma_{r}}\operatorname{total}\left(\left(r_{p}\left[O_{t}\right]-r_{m}\left[O_{t}\right]\right)"
+       r"D\left[n_{d}\left(p-1\right)+O_{t}\right]\right)\operatorname{for}p=\left[1..." + str(NPAR) + r"\right]\right]", F)
+    ex(r"F_{h}=\left[0\right]", F)
+
+    # ---------------- state ----------------
+    S0 = folder("Bodies (state)")
+    pos, _ = sim.initial_state(1)
+    init = [pos[0, m] for m in range(sim.M)]
+    ex(r"h\left(L,a\right)=L\left[an_{p}+1...an_{p}+n_{p}\right]", S0)
+    ex(r"S_{0}=\operatorname{join}\left(" + ",".join(
+        rf"\left(0\cdot\left[1...n_{{p}}\right]+{fx(p[0])},0\cdot\left[1...n_{{p}}\right]+{fx(p[1])}\right)" for p in init) + r"\right)", S0)
+    lit = r"\left[" + ",".join(rf"\left({fx(p[0])},{fx(p[1])}\right)" for p in init for _ in range(n_p)) + r"\right]"
+    ex(r"S=" + lit, S0)
+    ex(r"Q=" + lit, S0)
+    ex(r"A=\left[" + ",".join(["1"] * n_p) + r"\right]", S0)
+    ex(r"F_{d}=\left[" + ",".join(["0"] * n_p) + r"\right]", S0)
+    ex(r"F_{a}=\left[" + ",".join(["0"] * n_p) + r"\right]", S0)
+
+    # ---------------- static topology: gather lists ----------------
+    G = folder("Body topology (static index lists)")
+    ex(r"B_{a}=" + blocks([a for a, b, _ in sim.BONES]), G)
+    ex(r"B_{b}=" + blocks([b for a, b, _ in sim.BONES]), G)
+    ex(r"L_{b}=" + consts([L for _, _, L in sim.BONES]), G)
+    ex(r"M_{f}=" + blocks([fa for fa, j, c in sim.MOTORS]), G)
+    ex(r"M_{j}=" + blocks([j for fa, j, c in sim.MOTORS]), G)
+    ex(r"M_{c}=" + blocks([c for fa, j, c in sim.MOTORS]), G)
+    # contribution list K = [c (5 bones), -c (5), dc (4 motors), df (4), -(dc+df) (4), zero]; for each mass the
+    # contributions are listed in exactly the order proto/sim.py accumulates them (bones, then motors: child,
+    # far, joint), padded with the zero element, so the floating-point sums happen in the same order
+    nb, nm = len(sim.BONES), len(sim.MOTORS)
+    contrib = [[] for _ in range(sim.M)]
+    for bi, (a, b, _) in enumerate(sim.BONES):
+        contrib[a].append(bi); contrib[b].append(nb + bi)
+    for mi, (fa, j, c) in enumerate(sim.MOTORS):
+        contrib[c].append(2 * nb + mi); contrib[fa].append(2 * nb + nm + mi); contrib[j].append(2 * nb + 2 * nm + mi)
+    zero = 2 * nb + 3 * nm
+    depth = max(len(cl) for cl in contrib)
+    for r in range(depth):
+        parts = []
+        for m in range(sim.M):
+            parts.append(rf"\left[1...n_{{p}}\right]+{contrib[m][r]}n_{{p}}" if r < len(contrib[m])
+                         else rf"0\cdot\left[1...n_{{p}}\right]+{zero}n_{{p}}+1")
+        ex(rf"G_{{{r + 1}}}=\operatorname{{join}}\left(" + ",".join(parts) + r"\right)", G)
+    ex(r"N_{c}=" + consts([max(len(cl), 1) for cl in contrib]), G)
+
+    # ---------------- functions (no state dependence, analysed once) ----------------
+    Fn = folder("Physics and policy functions")
+    ex(r"w_{r}\left(a\right)=\operatorname{mod}\left(a+\pi,2\pi\right)-\pi", Fn)
+    ex(r"l_{a}\left(V\right)=\arctan\left(V.y,V.x\right)", Fn)
+    ex(r"j_{a}\left(P,J,C\right)=w_{r}\left(l_{a}\left(C-J\right)-l_{a}\left(J-P\right)\right)", Fn)
+    ex(r"t_{a}\left(P\right)=\arctan\left(h\left(P,0\right).x-h\left(P,1\right).x,h\left(P,0\right).y-h\left(P,1\right).y\right)", Fn)
+    ex(r"n_{w}\left(V\right)=\sqrt{V.xV.x+V.yV.y}+0.000000001", Fn)
+    ex(r"c_{z}\left(V,n,L\right)=\frac{0.5\left(n-L\right)}{n}V", Fn)
+    ex(r"c_{w}\left(V,L\right)=c_{z}\left(V,n_{w}\left(V\right),L\right)", Fn)
+    ex(rf"e_{{r}}\left(P,J,C,q\right)=\min\left(\max\left(w_{{r}}\left(q-j_{{a}}\left(P,J,C\right)\right)\cdot{fx(sim.MOTOR_K)},-{fx(sim.MAX_ROT)}\right),{fx(sim.MAX_ROT)}\right)", Fn)
+    ex(r"r_{t}\left(V,a\right)=\left(\cos\left(a\right)V.x-\sin\left(a\right)V.y,\sin\left(a\right)V.x+\cos\left(a\right)V.y\right)-V", Fn)
+    # both motor rotations (child by +u/2, parent-far by -u/2) as one rotation over a joined list; R = [dc, df]
+    ex(r"k_{v}\left(C,R\right)=\operatorname{join}\left(C,-C,R,-\left(R\left[1...4n_{p}\right]+R\left[4n_{p}+1...8n_{p}\right]\right),\left[\left(0,0\right)\right]\right)", Fn)
+    ex(r"k_{m}\left(C,P,J,X,u\right)=k_{v}\left(C,r_{t}\left(\operatorname{join}\left(X-J,P-J\right),\operatorname{join}\left(0.5u,-0.5u\right)\right)\right)", Fn)
+    ex(r"k_{n}\left(C,P,J,X,q\right)=k_{m}\left(C,P,J,X,e_{r}\left(P,J,X,q\right)\right)", Fn)
+    ex(r"g_{r}\left(V\right)=\left(V.x,\max\left(V.y,0\right)\right)", Fn)
+    gsum = "+".join(rf"K\left[G_{{{r + 1}}}\right]" for r in range(depth))
+    ex(rf"p_{{n}}\left(P,K\right)=g_{{r}}\left(P+\frac{{{gsum}}}{{N_{{c}}}}\right)", Fn)
+    ex(r"p_{s}\left(P,q\right)=p_{n}\left(P,k_{n}\left(c_{w}\left(P\left[B_{b}\right]-P\left[B_{a}\right],L_{b}\right),P\left[M_{f}\right],P\left[M_{j}\right],P\left[M_{c}\right],q\right)\right)", Fn)
+    ex(r"d_{f}\left(P\right)=\left\{h\left(P,1\right).y<0.45:1,h\left(P,0\right).y<h\left(P,1\right).y+0.25:1,0\right\}", Fn)
+    ex(r"u_{4}\left(L\right)=\operatorname{join}\left(L,L,L,L\right)", Fn)
+    ex(r"w_{q}\left(o\right)=W_{q}\left[4on_{p}+1...4on_{p}+4n_{p}\right]", Fn)
+    # action a -> target: hips 0.9*a, knees -0.75*(a+1), written as m_1*(a+m_0) (exact: x+0 = x)
+    ex(r"m_{1}=" + consts([0.9, -0.75, 0.9, -0.75]), Fn)
+    ex(r"m_{0}=" + consts([0, 1, 0, 1]), Fn)
+
+    # ---------------- per tick: policy and physics, unrolled n_s steps ----------------
+    # one ticker action advances n_s physics steps; the state is written back once per tick, and that
+    # write-back (re-parsing the S and Q literals) is the largest per-tick cost left after fusion
+    if steps_per_tick < 1 or episode % steps_per_tick:
+        raise ValueError(f"steps_per_tick={steps_per_tick} must be >= 1 and divide episode={episode}")
+    Y = folder(f"One tick = {steps_per_tick} physics step(s): senses, brain, Verlet, 4 Jacobi passes, friction")
+
+    def nm(base, s):                       # s = 0 keeps the plain names; later steps get a digit suffix
+        return base if s == 0 else base[:-1] + str(s) + "}"
+    P_, R_, al_ = "S", "Q", "A"            # positions, previous positions, alive flags entering step s
+    alive_after = []
+    for s in range(steps_per_tick):
+        O, q, A6, Sv, Sk, Sf = (nm(b, s) for b in ("O_{b}", "q_{c}", "A_{6}", "S_{v}", "S_{k}", "S_{f}"))
+        kk = r"k" if s == 0 else rf"\left(k+{s}\right)"
+        obs = [rf"t_{{a}}\left({P_}\right)",
+               rf"0.1\frac{{w_{{r}}\left(t_{{a}}\left({P_}\right)-t_{{a}}\left({R_}\right)\right)}}{{{DT}}}"]
+        obs += [rf"j_{{a}}\left({P_}\left[M_{{f}}\right],{P_}\left[M_{{j}}\right],{P_}\left[M_{{c}}\right]\right)"]   # 4 blocks at once
+        obs += [rf"h\left({P_},1\right).y-0.85",
+                rf"0.5\frac{{h\left({P_},1\right).x-h\left({R_},1\right).x}}{{{DT}}}",
+                rf"\left\{{h\left({P_},3\right).y<0.001:1,0\right\}}", rf"\left\{{h\left({P_},5\right).y<0.001:1,0\right\}}",
+                rf"\sin\left(2\pi\cdot{fx(sim.CLOCK_HZ)}\cdot\left({kk}\cdot{DT}\right)\right)+0\cdot\left[1...n_{{p}}\right]",
+                rf"\cos\left(2\pi\cdot{fx(sim.CLOCK_HZ)}\cdot\left({kk}\cdot{DT}\right)\right)+0\cdot\left[1...n_{{p}}\right]"]
+        assert len(obs) == sim.N_OBS - 1 - (sim.N_ACT - 1)   # 13th input is the bias; joint angles packed
+        ex(O + r"=\operatorname{join}\left(" + ",".join(obs) + r"\right)", Y)
+
+        pre = "+".join(rf"w_{{q}}\left({o}\right)u_{{4}}\left(h\left({O},{o}\right)\right)" for o in range(sim.N_OBS - 1))
+        ex(q + rf"=m_{{1}}\left(\tanh\left({pre}+w_{{q}}\left({sim.N_OBS - 1}\right)\right)+m_{{0}}\right)", Y)
+        ex(A6 + rf"=\operatorname{{join}}\left({al_},{al_},{al_},{al_},{al_},{al_}\right)", Y)
+        ex(Sv + rf"=\left({P_}.x+\left({P_}.x-{R_}.x\right)\cdot{fx(sim.DAMP)}\cdot {A6},{P_}.y+\left({P_}.y-{R_}.y\right)\cdot{fx(sim.DAMP)}\cdot {A6}+{fx(sim.G * sim.DT * sim.DT)}\cdot {A6}\right)", Y)
+        nested = Sv
+        for _ in range(sim.ITERS):
+            nested = rf"p_{{s}}\left({nested},{q}\right)"
+        ex(Sk + "=" + nested, Y)
+        ex(Sf + rf"=\left(\left\{{{Sk}.y\le0.000001:{P_}.x+\left({Sk}.x-{P_}.x\right)\cdot{fx(1 - sim.FRICTION)},{Sk}.x\right\}},{Sk}.y\right)", Y)
+        nxt_alive = rf"{al_}\left(1-d_{{f}}\left({Sf}\right){al_}\right)"
+        if s < steps_per_tick - 1:
+            name = f"A_{{a{s + 1}}}"
+            ex(name + "=" + nxt_alive, Y)
+            alive_after.append((al_, Sf, name))
+            P_, R_, al_ = Sf, P_, name
+        else:
+            alive_after.append((al_, Sf, nxt_alive))
+
+    # ---------------- actions ----------------
+    T = folder("Clock (tick = physics steps; then a fitness snapshot tick and a learning tick)")
+    fd = r"F_{d}"
+    fa_sum = r"F_{a}"
+    for al_in, Sf, al_out in alive_after:   # same update order as proto/ars.py, one step at a time
+        fd = rf"\left\{{{al_in}>0:h\left({Sf},1\right).x,{fd}\right\}}"
+        fa_sum = rf"{fa_sum}+{DT}\cdot {al_out}" if al_out.startswith("A_") else rf"{fa_sum}+{DT}{al_out}"
+    last_al_in, last_Sf, last_al_out = alive_after[-1]
+    prev_pos = alive_after[-2][1] if steps_per_tick > 1 else "S"
+    ex(rf"A_{{t}}=S\to {last_Sf},Q\to {prev_pos},F_{{d}}\to {fd},A\to {last_al_out},F_{{a}}\to {fa_sum},k\to k+{steps_per_tick}", T)
+    ex(rf"A_{{s}}=F_{{s}}\to F_{{d}}+{fx(sim.ALIVE_W)}F_{{a}},k\to k+1", T)
+    ex(r"A_{g}=w_{0}\to w_{n},g\to g+1,k\to0,S\to S_{0},Q\to S_{0},A\to1+0\cdot\left[1...n_{p}\right],"
+       r"F_{d}\to0\cdot\left[1...n_{p}\right],F_{a}\to0\cdot\left[1...n_{p}\right],"
+       r"F_{h}\to\operatorname{join}\left(F_{h},\left[\operatorname{mean}\left(F_{s}\right)\right]\right)", T)
+    ex(r"A_{c}=\left\{k<T_{e}:A_{t},k=T_{e}:A_{s},A_{g}\right\}", T)
+
+    # ---------------- drawing ----------------
+    V = folder("Drawing")
+    draw_id[0] = V
+    ex(r"S\left[B_{a}\right]+t\left(S\left[B_{b}\right]-S\left[B_{a}\right]\right)", V, color="#c8c2b3", lineWidth=2, lineOpacity=0.35)
+    best = r"\operatorname{sort}\left(\left[1...n_{p}\right],-F_{d}\right)\left[1\right]"
+    ia = "[" + ",".join(str(a) for a, b, _ in sim.BONES) + "]"
+    ib = "[" + ",".join(str(b) for a, b, _ in sim.BONES) + "]"
+    ex(rf"b_{{e}}={best}", V, hidden=True)
+    pa = rf"S\left[\left[{ia[1:-1]}\right]n_{{p}}+b_{{e}}\right]"
+    pb = rf"S\left[\left[{ib[1:-1]}\right]n_{{p}}+b_{{e}}\right]"
+    ex(rf"{pa}+t\left({pb}-{pa}\right)", V, color="#e8a33c", lineWidth=5)
+    ex(r"y=0", V, color="#555555", lineWidth=1.5)
+    ex(r"\left(\left[1...\operatorname{length}\left(F_{h}\right)\right]\cdot0.04-0.5,0.25F_{h}+2.2\right)", V, color="#6a9fb5", pointSize=4)
+    ex(r"\left(0,3.2\right)", V, color="#000000", hidden=False, showLabel=True, label=r"generation ${g}   tick ${k}", pointSize=0)
+
+    return {
+        "version": 11,
+        "graph": {"viewport": {"xmin": -1, "xmax": 7, "ymin": -0.6, "ymax": 3.6},
+                  "showGrid": False, "showXAxis": False, "showYAxis": False},
+        # minStep stops the ticker from dispatching (and re-rendering the UI) on every frame while the
+        # worker is still busy; 50 ms is far below the measured action time, so it never limits throughput
+        "expressions": {"list": items, "ticker": {"handlerLatex": "A_{c}", "minStepLatex": str(min_step_ms), "open": True, "playing": playing}},
+    }
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
     ap.add_argument("--theta")
     ap.add_argument("--nu", type=float, default=0.04)
     ap.add_argument("--paused", action="store_true")
+    ap.add_argument("--legacy", action="store_true", help="the original one-expression-per-term layout (slow)")
+    ap.add_argument("--steps", type=int, default=6, help="physics steps per ticker action (fast layout only)")
     a = ap.parse_args()
     th = np.load(a.theta) if a.theta else None
-    st = build(theta=th, nu=a.nu, playing=not a.paused)
+    if a.legacy:
+        st = build(theta=th, nu=a.nu, playing=not a.paused)
+    else:
+        st = build_fast(theta=th, nu=a.nu, playing=not a.paused, steps_per_tick=a.steps)
     json.dump(st, open(a.out, "w"), separators=(",", ":"))
     n = len(st["expressions"]["list"])
     print(f"wrote {a.out}: {n} items")
