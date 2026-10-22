@@ -36,6 +36,30 @@ Reuses train.py's physics (fastsim), policy and phase tracker. What differs from
     ARS iterates, avg <- beta * avg + (1 - beta) * theta after every update; the perturbations stay
     centred on the raw iterate.
   * v_cap: the distance term counts at most v_cap * episode seconds (no reward for averaging faster).
+  * Gait-quality knobs (all default off):
+      bar_asym / bar_lean: the mean row's bar also requires stance asymmetry |left - right single-support
+        time| / (left + right) <= bar_asym and mean |torso angle| <= bar_lean degrees over the episode, in
+        the stages flagged by gait_stages (None = every stage). Needs two single-support accumulators and
+        one |torso angle| accumulator for the mean row.
+      anti_scale: the noise is drawn as usual, then split into its mirror-symmetric and antisymmetric parts
+        (mirror = swap the leg rows and mirror the inputs, sym_expand.MM) and the antisymmetric part is scaled
+        by anti_scale: delta' = 0.5 (1 + k) delta + 0.5 (1 - k) mirror(delta). k = 1 is plain ARS; k = 0
+        searches only mirror-symmetric policies (the sym policy with nu / sqrt(2) per parameter).
+      sym_decay: after every update theta <- theta - sym_decay * 0.5 (theta - mirror(theta)), a pull of the
+        policy toward its mirror-symmetric part.
+      w_abs * sum dt * |torso angle| (a penalty linear in the lean, next to w_lean's square).
+      w_lean2 / w_asym2 / w_abs2 / w_air2 / air_free2: the shaping weights from the first episode after the mean row first
+        passes any bar (None = unchanged), the way nu2 switches the noise: walk first, then shape the walk.
+      anti_scale2 / sym_decay2: the same switch for the symmetry knobs. With anti_scale2 = 0 and sym_decay2 > 0 a
+        walk found by plain ARS is carried into the mirror-symmetric subspace: the noise stops exploring the
+        antisymmetric directions and the antisymmetric part of theta shrinks by sym_decay2 per update, while
+        the symmetric part keeps adapting so the walk survives the change. decay_on_pass: apply the decay only
+        after an episode whose mean row passed its bar (a failing walk is repaired before it is pushed further).
+        decay_limp = L: apply the decay only after an episode whose mean row's stance asymmetry exceeded L (stop
+        pushing once the walk is symmetric enough).
+      post_on: what switches the 2-knobs above (w_*2, air_free2, anti_scale2, sym_decay2) on. "pass" (default): the
+        first passing episode of any stage, like nu2. "exam": the first exam of the final stage whose mean row passes
+        the plain bar (speed, falls, phases, airborne; the gait limits are not needed), i.e. once the walk is robust.
   * An offline oracle that Desmos does not have and that is not counted: each generation the mean
     policy is also rolled out from rest for each horizon in `oracle_s`, to see when it first could
     pass the long bar.
@@ -56,11 +80,14 @@ import time
 import numpy as np
 
 import fastsim as fs
+import sym_expand
 import train
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 DEFAULTS = dict(
+    init_theta=None,          # path to start parameters, "{s}" replaced by the seed (default: zeros)
+    init_ever=False,          # start as if the mean row had already passed a bar (the post-pass knobs on)
     name="long_baseline", P=128, b=32, nu=0.12, alpha=0.15, alive_w=0.0, w_air=3.0, air_free=0.15,
     sym=False, seeds=list(range(8)), early_term=True,
     stages=[5.0, 10.0, 20.0], advance="bar", stage_gens=None, pass_streak=1, final_streak=1, demote=False,
@@ -68,9 +95,20 @@ DEFAULTS = dict(
     w_lean=0.0, w_asym=0.0, w_late=0.0, w_alt=0.0, alt_cap=40,
     oracle_s=[20.0], post_pass_gens=0, budget_ticks=150_000, ckpt_every=5, chain_stages=None,
     cut_stages=None, pace_cut=None, nu2=None, alpha2=None, w_pace=0.0, v_pace=0.9, avg_beta=None, v_cap=None,
+    bar_asym=None, bar_lean=None, gait_stages=None, anti_scale=1.0, sym_decay=0.0, w_abs=0.0,
+    w_lean2=None, w_asym2=None, w_abs2=None, w_air2=None, air_free2=None, anti_scale2=None, sym_decay2=None,
+    decay_on_pass=False, decay_limp=None, post_on="pass",
 )
+POST_KEYS = ("w_lean", "w_asym", "w_abs", "w_air", "air_free")
 
 PHASES_PER_5S = train.BAR_PHASES
+MM = sym_expand.MM
+
+
+def mirror_theta(th):
+    """The mirror image of 4x13 policies th (..., 4, 13): [right rows @ MM; left rows @ MM]. A policy equals its
+    mirror image exactly when it is mirror-symmetric (sym_expand.expand of a 2x13 leg controller)."""
+    return np.concatenate([th[..., 2:, :] @ MM, th[..., :2, :] @ MM], -2)
 
 
 def required_phases(seconds):
@@ -104,7 +142,7 @@ def rollout(W, ph, end, grp, sym, early_term, start=None, t0=None, cut=None, pac
     x0 = pos[fs.HIP, 0].copy()
     DT = ph.DT
     alive = np.ones(R)
-    dist, alive_t, air_t, air_ticks, lean1, lean2, s_l, s_r, dist_half = np.zeros((9, R))
+    dist, alive_t, air_t, air_ticks, lean1, lean2, lean_abs, s_l, s_r, dist_half = np.zeros((10, R))
     ever = np.zeros(R, bool)
     half = end // 2
     trk = train.PhaseTracker(R)
@@ -136,6 +174,7 @@ def rollout(W, ph, end, grp, sym, early_term, start=None, t0=None, cut=None, pac
         th = np.arctan2(pos[fs.HEAD, 0] - pos[fs.HIP, 0], pos[fs.HEAD, 1] - pos[fs.HIP, 1])
         lean1[rows] += a * DT * th
         lean2[rows] += a * DT * th * th
+        lean_abs[rows] += a * DT * np.abs(th)
         s_l[rows] += a * DT * (cl & ~cr)
         s_r[rows] += a * DT * (cr & ~cl)
         at_half = half[rows] == k + 1
@@ -166,7 +205,7 @@ def rollout(W, ph, end, grp, sym, early_term, start=None, t0=None, cut=None, pac
     fin_t = end * DT + (0.0 if t0 is None else t0)
     return dict(dist=dist, alive_t=alive_t, air_t=air_t, air_ticks=air_ticks, fallen=ever,
                 n_left=trk.cnt[0], n_right=trk.cnt[1], alts=trk.cnt.sum(0), lean_mean=lean1 / np.maximum(alive_t, 1e-9),
-                lean2=lean2, s_l=s_l, s_r=s_r, dist_half=dist_half, ticks=end,
+                lean2=lean2, lean_abs=lean_abs, s_l=s_l, s_r=s_r, dist_half=dist_half, ticks=end,
                 fin_pos=fin_pos, fin_prev=fin_prev, fin_t=fin_t)
 
 
@@ -181,7 +220,18 @@ def fitness(out, cfg):
             - cfg["w_lean"] * out["lean2"] - cfg["w_asym"] * np.abs(out["s_l"] - out["s_r"])
             + cfg["w_late"] * (out["dist"] - out["dist_half"])
             + cfg["w_alt"] * np.minimum(out["alts"], cfg["alt_cap"])
-            - cfg["w_pace"] * np.maximum(0.0, cfg["v_pace"] * out["alive_t"] - out["dist"]))
+            - cfg["w_pace"] * np.maximum(0.0, cfg["v_pace"] * out["alive_t"] - out["dist"])
+            - cfg["w_abs"] * out["lean_abs"])
+
+
+def gait_ok(out, idx, cfg):
+    """The gait-quality part of the bar for rows idx (True where no gait limit is set)."""
+    ok = np.ones(len(idx), bool)
+    if cfg["bar_asym"] is not None:
+        ok &= limp(out)[idx] <= cfg["bar_asym"]
+    if cfg["bar_lean"] is not None:
+        ok &= np.degrees(out["lean_abs"][idx] / np.maximum(out["alive_t"][idx], 1e-9)) <= cfg["bar_lean"]
+    return ok
 
 
 def per_stage(cfg, key, stage):
@@ -217,14 +267,23 @@ def train_long(cfg):
         raise ValueError(f"advance must be 'bar' or 'gens', got {cfg['advance']!r}")
     if cfg["advance"] == "gens" and len(cfg["stage_gens"] or []) != last:
         raise ValueError("advance='gens' needs stage_gens with one entry per non-final stage")
+    if sym and (cfg["anti_scale"] != 1.0 or cfg["sym_decay"] or cfg["anti_scale2"] is not None or cfg["sym_decay2"]):
+        raise ValueError("anti_scale and sym_decay act on the 4x13 policy; the sym policy is symmetric already")
+    if cfg["post_on"] not in ("pass", "exam"):
+        raise ValueError(f"post_on must be 'pass' or 'exam', got {cfg['post_on']!r}")
+    if cfg["gait_stages"] is not None and len(cfg["gait_stages"]) != len(stages):
+        raise ValueError("gait_stages needs one flag per stage")
     A = 2 if sym else fs.N_ACT
     rngs = [np.random.default_rng(1_000_003 * s + 17) for s in seeds]
     theta = np.zeros((S, A, fs.N_OBS))
+    if cfg["init_theta"]:                     # start from trained parameters ("{s}" in the path = the seed)
+        for i, s in enumerate(seeds):
+            theta[i] = np.load(cfg["init_theta"].format(s=s)).reshape(A, fs.N_OBS)
     st = dict(g=0, theta=theta, hist=[[] for _ in range(S)], cum=np.zeros(S), stage=np.zeros(S, int),
               streak=np.zeros(S, int), first_final=[None] * S, ticks_to_bar=[None] * S, desmos_ticks=[None] * S,
               oracle_first={h: [None] * S for h in cfg["oracle_s"]}, done=np.zeros(S, bool),
               theta_pass=np.zeros_like(theta), final_theta=np.zeros_like(theta), gens_in_stage=np.zeros(S, int),
-              carry=[None] * S, ever=np.zeros(S, bool), theta_avg=np.zeros_like(theta))
+              carry=[None] * S, ever=np.full(S, bool(cfg["init_ever"])), theta_avg=np.zeros_like(theta))
     ckpt_path = os.path.join(out_dir, "ckpt.pkl")
     if os.path.exists(ckpt_path):            # resume an interrupted run (file written by this script)
         with open(ckpt_path, "rb") as fh:
@@ -235,6 +294,10 @@ def train_long(cfg):
         for r, s in zip(rngs, ck["rng"]):
             r.bit_generator.state = s
     theta = st["theta"]
+    st.setdefault("ever_x", np.zeros(S, bool))
+
+    def post(i):                              # are the 2-knobs on for seed i
+        return bool(st["ever"][i] if cfg["post_on"] == "pass" else st["ever_x"][i])
     log = open(os.path.join(out_dir, "log.txt"), "a")
     if st["g"]:
         print(f"resumed at gen {st['g']}", file=log, flush=True)
@@ -246,6 +309,11 @@ def train_long(cfg):
         n = len(act)
         T_s = np.array([int(round(stages[st["stage"][i]] / ph.DT)) for i in act])
         deltas = np.stack([rngs[i].standard_normal((N, A, fs.N_OBS)) for i in act])     # (n, N, A, O)
+        ks = np.array([cfg["anti_scale2"] if post(i) and cfg["anti_scale2"] is not None else cfg["anti_scale"]
+                       for i in act])
+        if (ks != 1.0).any():                 # shrink the antisymmetric part of the noise
+            kk = ks[:, None, None, None]
+            deltas = 0.5 * (1 + kk) * deltas + 0.5 * (1 - kk) * mirror_theta(deltas)
         nus = np.array([cfg["nu2"] if st["ever"][i] and cfg["nu2"] is not None else per_stage(cfg, "nu", st["stage"][i])
                         for i in act])
         Wp = np.concatenate([theta[act, None] + nus[:, None, None, None] * deltas,
@@ -275,6 +343,9 @@ def train_long(cfg):
         out = rollout(W, ph, end, grp, sym, cfg["early_term"], start, t0, cut, cfg["pace_cut"])
         nb = n * (P + 1)
         fit = fitness(out, cfg)[:nb]
+        if any(cfg[f"{k}2"] is not None for k in POST_KEYS):     # seeds past their first pass use the 2-weights
+            cfg2 = {**cfg, **{k: cfg[f"{k}2"] for k in POST_KEYS if cfg[f"{k}2"] is not None}}
+            fit = np.where(np.repeat([post(i) for i in act], P + 1), fitness(out, cfg2)[:nb], fit)
         if cfg["v_cap"] is not None:          # distance counts only up to v_cap * episode seconds
             d = out["dist"][:nb]
             fit = fit - d + np.minimum(d, cfg["v_cap"] * np.repeat(T_s, P + 1) * ph.DT)
@@ -282,6 +353,10 @@ def train_long(cfg):
         mrow = np.arange(n) * (P + 1) + P
         m_pass = bar(out["dist"][mrow], T_s, out["fallen"][mrow], out["n_left"][mrow], out["n_right"][mrow],
                      out["air_ticks"][mrow], ph.DT)
+        m_plain = m_pass.copy()
+        if cfg["bar_asym"] is not None or cfg["bar_lean"] is not None:
+            flag = np.array([cfg["gait_stages"] is None or bool(cfg["gait_stages"][st["stage"][i]]) for i in act], bool)
+            m_pass = m_pass & (~flag | gait_ok(out, mrow, cfg))
         ticks_gen = out["ticks"][mrow]
         lp = limp(out)
         or_pass = {}
@@ -297,6 +372,7 @@ def train_long(cfg):
                        nu=float(nus[jj]), dist=float(out["dist"][mi]), fallen=bool(out["fallen"][mi]),
                        alive_t=float(out["alive_t"][mi]), nL=int(out["n_left"][mi]), nR=int(out["n_right"][mi]),
                        air=float(out["air_ticks"][mi] / T_s[jj]), limp=float(lp[mi]), lean=float(out["lean_mean"][mi]),
+                       lean_abs=float(out["lean_abs"][mi] / max(out["alive_t"][mi], 1e-9)),
                        passed=bool(m_pass[jj]), pop_best=float(out["dist"][jj * (P + 1):jj * (P + 1) + P].max()))
             for j, h in enumerate(cfg["oracle_s"]):
                 oi = nb + j * n + jj
@@ -315,6 +391,7 @@ def train_long(cfg):
                 st["carry"][i] = (cp, cv, float(np.mod(out["fin_t"][mi], 1.0 / fs.CLOCK_HZ)))
             # curriculum logic (all of it is a few scalar variables per run in Desmos)
             st["ever"][i] |= bool(m_pass[jj])
+            st["ever_x"][i] |= bool(m_plain[jj]) and stage == last
             st["streak"][i] = st["streak"][i] + 1 if m_pass[jj] else 0
             st["gens_in_stage"][i] += 1
             if stage == last:
@@ -342,6 +419,13 @@ def train_long(cfg):
             top = np.argsort(-np.maximum(rp, rm))[:b]
             sigma = np.concatenate([rp[top], rm[top]]).std() + 1e-8
             theta[i] += alpha / (b * sigma) * np.einsum('n,nao->ao', rp[top] - rm[top], deltas[jj, top])
+            lam = cfg["sym_decay2"] if post(i) and cfg["sym_decay2"] is not None else cfg["sym_decay"]
+            if cfg["decay_on_pass"] and not st["hist"][i][-1]["passed"]:
+                lam = 0.0
+            if cfg["decay_limp"] is not None and st["hist"][i][-1]["limp"] <= cfg["decay_limp"]:
+                lam = 0.0
+            if lam:
+                theta[i] -= lam * 0.5 * (theta[i] - mirror_theta(theta[i]))
             if cfg["avg_beta"] is not None:
                 st["theta_avg"][i] = cfg["avg_beta"] * st["theta_avg"][i] + (1 - cfg["avg_beta"]) * theta[i]
             st["cum"][i] += ticks_gen[jj]

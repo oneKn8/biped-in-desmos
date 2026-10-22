@@ -1,0 +1,76 @@
+{
+ "k": 20,
+ "sigma": 0.001,
+ "rows": [
+  {
+   "file": "long_walkers/P96_symmetrized_gait-exam/theta_pass20_s0.npy",
+   "jitter20": 0.7,
+   "jitter60": 0.2
+  },
+  {
+   "file": "long_walkers/P96_symmetrized_gait-exam/theta_pass20_s2.npy",
+   "jitter20": 1.0,
+   "jitter60": 1.0
+  },
+  {
+   "file": "long_walkers/P96_symmetrized_gait-exam/theta_pass20_s3.npy",
+   "jitter20": 1.0,
+   "jitter60": 0.9
+  },
+  {
+   "file": "long_walkers/P96_symmetrized_gait-exam/theta_pass20_s5.npy",
+   "jitter20": 1.0,
+   "jitter60": 1.0
+  },
+  {
+   "file": "long_walkers/P96_symmetrized_gait-exam/theta_pass20_s6.npy",
+   "jitter20": 0.95,
+   "jitter60": 0.95
+  },
+  {
+   "file": "long_walkers/P96_symmetrized_gait-exam/theta_pass20_s7.npy",
+   "jitter20": 1.0,
+   "jitter60": 1.0
+  },
+  {
+   "file": "long_walkers/P96_symmetrized_gait-exam/theta_pass20_s10.npy",
+   "jitter20": 1.0,
+   "jitter60": 1.0
+  },
+  {
+   "file": "long_walkers/P96_symmetrized_gait-exam/theta_pass20_s12.npy",
+   "jitter20": 0.9,
+   "jitter60": 0.9
+  },
+  {
+   "file": "long_walkers/P96_symmetrized_gait-exam/theta_pass20_s14.npy",
+   "jitter20": 0.9,
+   "jitter60": 0.55
+  },
+  {
+   "file": "long_walkers/P96_symmetrized_gait-exam/theta_pass20_s16.npy",
+   "jitter20": 1.0,
+   "jitter60": 1.0
+  },
+  {
+   "file": "long_walkers/P96_symmetrized_gait-exam/theta_pass20_s18.npy",
+   "jitter20": 1.0,
+   "jitter60": 1.0
+  },
+  {
+   "file": "long_walkers/P96_symmetrized_gait-exam/theta_pass20_s19.npy",
+   "jitter20": 1.0,
+   "jitter60": 1.0
+  },
+  {
+   "file": "long_walkers/P96_symmetrized_gait-exam/theta_pass20_s21.npy",
+   "jitter20": 1.0,
+   "jitter60": 1.0
+  },
+  {
+   "file": "long_walkers/P96_symmetrized_gait-exam/theta_pass20_s22.npy",
+   "jitter20": 0.65,
+   "jitter60": 0.05
+  }
+ ]
+}

@@ -37,7 +37,8 @@ def fx(v):
 
 def build(theta=None, nu=0.12, alpha=0.15, n_dir=64, top=32, episode=300, playing=True, steps_per_tick=6,
           min_step_ms=50, random_seed=DEFAULT_RANDOM_SEED, long_walk=False, exam=1200, window_streak=2,
-          exam_streak=2, nu2=0.08, alpha2=0.08):
+          exam_streak=2, nu2=0.08, alpha2=0.08, gait=False, w_air2=8.0, w_lean2=3.0, sym_decay2=0.05,
+          bar_asym=0.15, bar_lean=8.0, start_passed=False):
     """Physics, policy, learning rule and walking bar, laid out for Desmos speed.
 
     long_walk: instead of stopping at the first 5 s pass, practise on 5 s windows that continue the
@@ -46,6 +47,13 @@ def build(theta=None, nu=0.12, alpha=0.15, n_dir=64, top=32, episode=300, playin
     falls (every body freezes, which scores like ending the episode). Learning stops after exam_streak
     exam passes in a row. Noise and step size drop to nu2 and alpha2 once the mean row has passed any
     bar. This is the recipe from proto/sweep/long_train.py (stages [5, 20], chained windows, cut exams).
+
+    gait (with long_walk): from the first pass on, the noise keeps only its mirror-symmetric part (left and
+    right legs swapped, the clock shifted by half a period), every update pulls the parameters a further
+    sym_decay2 / 2 toward their mirror image, fitness charges w_air2 for airborne time and w_lean2 for the
+    squared torso angle, and an exam also needs stance asymmetry <= bar_asym and mean |torso angle| <=
+    bar_lean degrees. That is long_train.py's G_homo05_l3_bar recipe. start_passed starts past the first pass
+    (to polish a walker given by theta).
 
     Measured cost model (NOTES.md, 2026-10-21/22): every statement downstream of the action-written
     state is re-analysed by the worker on every tick and also costs main-thread progress messages;
@@ -70,6 +78,9 @@ def build(theta=None, nu=0.12, alpha=0.15, n_dir=64, top=32, episode=300, playin
     if not 1 <= top <= n_dir:
         raise ValueError(f"need 1 <= top <= n_dir, got top={top} n_dir={n_dir}")
     LW = long_walk
+    GT = gait
+    if GT and not LW:
+        raise ValueError("gait needs long_walk")
     if LW and exam % steps_per_tick:
         raise ValueError(f"steps_per_tick={steps_per_tick} must divide exam={exam}")
     items, fid = [], [0]
@@ -131,7 +142,7 @@ def build(theta=None, nu=0.12, alpha=0.15, n_dir=64, top=32, episode=300, playin
     if LW:
         ex(r"X_{e}=0", F)                   # 1 while the episode is an exam from rest
         ex(r"k_{s}=0", F)                   # pass streak: passing windows in a row, or exam passes in a row
-        ex(r"P_{e}=0", F)                   # 1 once the mean row has passed any bar
+        ex(rf"P_{{e}}={1 if start_passed else 0}", F)   # 1 once the mean row has passed any bar
         ex(r"t_{0}=0", F)                   # clock offset of a window that continues the last walk
         ex(r"K_{e}=0", F)                   # steps the last episode ran
     w0 = np.zeros(NPAR) if theta is None else np.asarray(theta, float).reshape(-1)
@@ -143,7 +154,22 @@ def build(theta=None, nu=0.12, alpha=0.15, n_dir=64, top=32, episode=300, playin
     ex(r"s_{v}=\operatorname{join}\left(1+0\cdot\left[1...n_{d}\right],-1+0\cdot\left[1...n_{d}\right],\left[0\right]\right)", F)
     ex(r"i_{m}=\operatorname{join}\left(\left[1...n_{d}\right],\left[1...n_{d}\right],\left[1\right]\right)", F)
     # parameter p (0-based) of every individual; once the mean policy has walked, every row is the mean
-    ex(r"v\left(p\right)=w_{0}\left[p+1\right]+\nu\left(1-P_{w}\right)s_{v}D\left[n_{d}p+i_{m}\right]", F)
+    Dn = "D"
+    if GT:
+        # mirror image of parameter p = 13a + o: sign(o) * w[13 ((a + 2) mod 4) + mu(o)] (legs swapped, inputs mirrored)
+        mu = [0, 1, 4, 5, 2, 3, 6, 7, 9, 8, 10, 11, 12]
+        sg = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, 1]
+        pi = [sim.N_OBS * ((a + 2) % sim.N_ACT) + mu[o] for a in range(sim.N_ACT) for o in range(sim.N_OBS)]
+        sp = [sg[o] for a in range(sim.N_ACT) for o in range(sim.N_OBS)]
+        ex(r"M_{p}=\left[" + ",".join(str(x + 1) for x in pi) + r"\right]", F)
+        ex(r"M_{s}=\left[" + ",".join(str(x) for x in sp) + r"\right]", F)
+        ex(r"I_{m}=\left[" + ",".join(str(n_dir * pi[q] + j + 1) for q in range(NPAR) for j in range(n_dir)) + r"\right]", F)
+        ex(r"S_{m}=\left[" + ",".join(str(sp[q]) for q in range(NPAR) for j in range(n_dir)) + r"\right]", F)
+        # after the first pass only the mirror-symmetric part of the noise (P_e D_s + (1 - P_e) D is exact for 0/1)
+        ex(r"D_{s}=0.5\left(D+S_{m}D\left[I_{m}\right]\right)", F)
+        ex(r"D_{u}=P_{e}D_{s}+\left(1-P_{e}\right)D", F)
+        Dn = "D_{u}"
+    ex(rf"v\left(p\right)=w_{{0}}\left[p+1\right]+\nu\left(1-P_{{w}}\right)s_{{v}}{Dn}\left[n_{{d}}p+i_{{m}}\right]", F)
     # policy weights regrouped once per generation so one tick evaluates all 4 actions as 4n_p-long lists;
     # 52 blocks of n_p would pass the list cap at n_p = 193, so the blocks are split over two lists
     for name, obs_range in (("W_{q1}", range(N_LO)), ("W_{q2}", range(N_LO, sim.N_OBS))):
@@ -156,7 +182,11 @@ def build(theta=None, nu=0.12, alpha=0.15, n_dir=64, top=32, episode=300, playin
     ex(r"O_{t}=\operatorname{sort}\left(\left[1...n_{d}\right],-\max\left(r_{p},r_{m}\right)\right)\left[1...b_{t}\right]", F)
     ex(r"\sigma_{r}=\operatorname{stdevp}\left(\operatorname{join}\left(r_{p}\left[O_{t}\right],r_{m}\left[O_{t}\right]\right)\right)+10^{-8}", F)
     ex(r"w_{n}=\left[w_{0}\left[p\right]+\frac{\alpha}{b_{t}\sigma_{r}}\operatorname{total}\left(\left(r_{p}\left[O_{t}\right]-r_{m}\left[O_{t}\right]\right)"
-       r"D\left[n_{d}\left(p-1\right)+O_{t}\right]\right)\operatorname{for}p=\left[1..." + str(NPAR) + r"\right]\right]", F)
+       + Dn + r"\left[n_{d}\left(p-1\right)+O_{t}\right]\right)\operatorname{for}p=\left[1..." + str(NPAR) + r"\right]\right]", F)
+    if GT:      # from the update right after the first pass: pull toward the mirror image
+        ex(rf"w_{{m}}=w_{{n}}-{fx(sym_decay2 * 0.5)}\left(w_{{n}}-M_{{s}}w_{{n}}\left[M_{{p}}\right]\right)", F)
+        ex(r"q_{u}=\max\left(P_{e},P_{s}\right)", F)
+        ex(r"w_{u}=q_{u}w_{m}+\left(1-q_{u}\right)w_{n}", F)
     ex(r"F_{h}=\left[\right]", F)            # mean-policy distance (long walk: speed), one entry per generation
     if LW:
         ex(r"F_{x}=\left[\right]", F)        # 1 where that episode was an exam
@@ -179,6 +209,10 @@ def build(theta=None, nu=0.12, alpha=0.15, n_dir=64, top=32, episode=300, playin
     # mean policy's phase counter (walkbar.PhaseTracker): [side, run length, last counted side, n_left, n_right]
     z0 = r"\left[-1,0,-1,0,0\right]"
     ex(r"Z=" + z0, S0)
+    if GT:
+        ex(r"F_{l}=" + zeros, S0)            # sum of dt * torso angle^2 while upright (the post-pass lean penalty)
+        ex(r"G_{l}=0", S0); ex(r"G_{r}=0", S0)   # mean row: seconds in single support on the left / right foot
+        ex(r"G_{a}=0", S0)                   # mean row: sum of dt * |torso angle| while upright
 
     # ---------------- static topology: gather lists ----------------
     G = folder("Body topology (static index lists)")
@@ -308,23 +342,43 @@ def build(theta=None, nu=0.12, alpha=0.15, n_dir=64, top=32, episode=300, playin
     # ---------------- actions ----------------
     T = folder("Clock (tick = physics steps; then a fitness snapshot tick and a learning tick)")
     fd, fa, fair, z = r"F_{d}", r"F_{a}", r"F_{air}", "Z"
+    gl2, ggl, ggr, gga = r"F_{l}", r"G_{l}", r"G_{r}", r"G_{a}"
     for al_in, Sf, al_out in alive_after:   # same update order as proto/ars.py, one step at a time
         fd = rf"\left\{{{al_in}>0:h\left({Sf},1\right).x,{fd}\right\}}"
         fa = rf"{fa}+{DT}\cdot {al_out}"
         fair = rf"{fair}+{DT}\cdot {al_out}\cdot b_{{u}}\left({Sf}\right)"
         z = (rf"z_{{u}}\left({z},c_{{s}}\left({Sf}\left[4n_{{p}}\right].y,{Sf}\left[6n_{{p}}\right].y,"
              rf"{al_out}\left[n_{{p}}\right]\right)\right)")
-    ex(rf"A_{{t}}=S\to {P_},Q\to {R_},F_{{d}}\to {fd},A\to {al_},F_{{a}}\to {fa},F_{{air}}\to {fair},Z\to {z},k\to k+{steps_per_tick}", T)
+        if GT:
+            gl2 = rf"{gl2}+{DT}\cdot {al_out}\cdot t_{{a}}\left({Sf}\right)\cdot t_{{a}}\left({Sf}\right)"
+            am, fl, fr = rf"{al_out}\left[n_{{p}}\right]", rf"{Sf}\left[4n_{{p}}\right].y", rf"{Sf}\left[6n_{{p}}\right].y"
+            ggl = rf"{ggl}+{DT}\cdot {am}\cdot\left\{{{fl}<0.001:\left\{{{fr}<0.001:0,1\right\}},0\right\}}"
+            ggr = rf"{ggr}+{DT}\cdot {am}\cdot\left\{{{fr}<0.001:\left\{{{fl}<0.001:0,1\right\}},0\right\}}"
+            gga = (rf"{gga}+{DT}\cdot {am}\cdot\left|\arctan\left({Sf}\left[n_{{p}}\right].x-{Sf}\left[2n_{{p}}\right].x,"
+                   rf"{Sf}\left[n_{{p}}\right].y-{Sf}\left[2n_{{p}}\right].y\right)\right|")
+    gacc = rf",F_{{l}}\to {gl2},G_{{l}}\to {ggl},G_{{r}}\to {ggr},G_{{a}}\to {gga}" if GT else ""
+    ex(rf"A_{{t}}=S\to {P_},Q\to {R_},F_{{d}}\to {fd},A\to {al_},F_{{a}}\to {fa},F_{{air}}\to {fair},Z\to {z},k\to k+{steps_per_tick}" + gacc, T)
     fit = r"F_{d}"
     if sim.ALIVE_W:
         fit += rf"+{fx(sim.ALIVE_W)}F_{{a}}"
-    if sim.W_AIR:
+    if GT:      # after the first pass a stronger airborne penalty and a torso-angle penalty
+        ex(rf"c_{{a}}=\left\{{P_{{e}}=1:{fx(w_air2)},{fx(sim.W_AIR)}\right\}}", T)
+        ex(rf"c_{{l}}=\left\{{P_{{e}}=1:{fx(w_lean2)},0\right\}}", T)
+        fit += r"-c_{a}p_{a}\left(F_{air},F_{a}\right)-c_{l}F_{l}"
+    elif sim.W_AIR:
         fit += rf"-{fx(sim.W_AIR)}p_{{a}}\left(F_{{air}},F_{{a}}\right)"
     # snapshot: fitness for the update, and the mean row's bar test (its phase counter closed as in finish())
-    ex(rf"A_{{s}}=F_{{s}}\to {fit},P_{{s}}\to p_{{c}}\left(F_{{d}}\left[n_{{p}}\right],A\left[n_{{p}}\right],"
+    gate = ""
+    if GT:      # an exam also needs an even gait: stance asymmetry and mean |torso angle| (degrees) of the mean row
+        ex(rf"g_{{k}}=\left\{{X_{{e}}=0:1,\frac{{\left|G_{{l}}-G_{{r}}\right|}}{{\max\left(G_{{l}}+G_{{r}},10^{{-9}}\right)}}\le{fx(bar_asym)}:"
+           rf"\left\{{\frac{{G_{{a}}}}{{\max\left(F_{{a}}\left[n_{{p}}\right],10^{{-9}}\right)}}\cdot\frac{{180}}{{\pi}}\le{fx(bar_lean)}:1,0\right\}},0\right\}}", T)
+        gate = r"g_{k}"
+    ex(rf"A_{{s}}=F_{{s}}\to {fit},P_{{s}}\to {gate}p_{{c}}\left(F_{{d}}\left[n_{{p}}\right],A\left[n_{{p}}\right],"
        rf"z_{{u}}\left(Z,-1\right),F_{{air}}\left[n_{{p}}\right]\right),k\to T_{{e}}+1" + (r",K_{e}\to k" if LW else ""), T)
     zl = r"0\cdot\left[1...n_{p}\right]"
     counters = rf"A\to1+{zl},F_{{d}}\to{zl},F_{{a}}\to{zl},F_{{air}}\to{zl},Z\to" + z0
+    if GT:
+        counters += rf",F_{{l}}\to{zl},G_{{l}}\to0,G_{{r}}\to0,G_{{a}}\to0"
     reset = r"k\to0,S\to S_{0},Q\to S_{0}," + counters + (r",t_{0}\to0" if LW else "")
     if not LW:
         log = r"F_{h}\to\operatorname{join}\left(F_{h},\left[F_{d}\left[n_{p}\right]\right]\right)"
@@ -342,7 +396,7 @@ def build(theta=None, nu=0.12, alpha=0.15, n_dir=64, top=32, episode=300, playin
         # after an exam: a pass extends the exam streak (exam again), a fail goes back to windows
         x_next = (rf"\left\{{X_{{e}}=0:\left\{{P_{{s}}=1:\left\{{{n1}\ge{window_streak}:1,0\right\}},0\right\}},P_{{s}}=1:1,0\right\}}")
         k_next = (rf"\left\{{X_{{e}}=0:\left\{{P_{{s}}=1:\left\{{{n1}\ge{window_streak}:0,{n1}\right\}},0\right\}},P_{{s}}=1:{n1},0\right\}}")
-        learn = r"w_{0}\to w_{n},g\to g+1,P_{e}\to\max\left(P_{e},P_{s}\right)," + log
+        learn = (r"w_{0}\to w_{u}" if GT else r"w_{0}\to w_{n}") + r",g\to g+1,P_{e}\to\max\left(P_{e},P_{s}\right)," + log
         # the next episode continues the walk only after a passing window that does not complete the streak
         ex(rf"c_{{n}}=\left\{{X_{{e}}=0:\left\{{P_{{s}}=1:\left\{{{n1}\ge{window_streak}:0,1\right\}},0\right\}},0\right\}}", T)
         ex(rf"d_{{n}}=\left\{{X_{{e}}=1:\left\{{P_{{s}}=1:\left\{{{n1}\ge{exam_streak}:1,0\right\}},0\right\}},0\right\}}", T)
@@ -429,10 +483,12 @@ if __name__ == "__main__":
     ap.add_argument("--steps", type=int, default=6, help="physics steps per ticker action")
     ap.add_argument("--random-seed", default=DEFAULT_RANDOM_SEED, help="Desmos randomSeed (32 hex digits); sets the whole noise sequence")
     ap.add_argument("--long", action="store_true", help="long-walk recipe: chained 5 s windows and 20 s exams (use --dirs 48 --top 24)")
+    ap.add_argument("--gait", action="store_true", help="with --long: symmetrise the walk after the first pass and gate exams on gait")
+    ap.add_argument("--start-passed", action="store_true", help="start past the first pass (polish the walker given by --theta)")
     a = ap.parse_args()
     th = np.load(a.theta) if a.theta else None
     st = build(theta=th, nu=a.nu, alpha=a.alpha, n_dir=a.dirs, top=a.top, playing=not a.paused, steps_per_tick=a.steps,
-               random_seed=a.random_seed, long_walk=a.long)
+               random_seed=a.random_seed, long_walk=a.long or a.gait, gait=a.gait, start_passed=a.start_passed)
     json.dump(st, open(a.out, "w"), separators=(",", ":"))
     n = len(st["expressions"]["list"])
     print(f"wrote {a.out}: {n} items")

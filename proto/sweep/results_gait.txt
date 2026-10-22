@@ -1,0 +1,112 @@
+Gait-quality sweep on the adopted long-walk recipe (2026-10-22). Trainer: long_train.py; configs: run_gait.py;
+table: analyze_gait.py; reference checks: verify_gait.py (../ars.py rollout from rest, 1200 and 3600 ticks, ../walkbar.py
+bar via ars.passes); robustness: robust_gait.py.
+
+Columns. 20 s two-in-a-row pass: seeds whose mean row passed the 20 s exam twice in a row within 100k training ticks
+(for the gated configs the exam also requires asymmetry <= 0.15 and mean |torso angle| <= 8 deg). Median ticks (IQR):
+training ticks before the second passing exam, a seed that never passed counts as +inf. Desmos min: median ticks
+including that exam / 22 steps per s / 60 (rate measured for 97 bodies; the gait accumulators add per-step work that has
+not been timed in Desmos). Ref 20 s / 60 s bar: reference re-check of the walkers that passed. Asymmetry = |left - right
+single-support time| / (left + right); mean abs torso = mean |torso angle| while upright (0 = upright); signed torso and
+torso std (the pitch swing) over the same 20 s reference rollout. All gait numbers are medians over the walkers.
+
+Knob names (long_train.py): lean = w_lean (penalty on sum dt * torso angle^2), asym = w_asym, air = w_air (default 3),
+airfree = air_free (default 0.15), anti = anti_scale (noise antisymmetric part scale), decay = sym_decay (pull of theta
+to its mirror-symmetric part per update), cap = v_cap; a 2 suffix means the value used from the first passing episode
+on (lean2, air2, anti2, decay2, airfree2, nu2, a2); exam asym / exam torso = bar_asym / bar_lean on the 20 s exams.
+
+Robustness of the walkers (robust_gait.py, K = 20 rollouts per walker from a start perturbed by N(0, 1 mm), reference physics):
+  recommended (14 walkers, long_walkers/P96_symmetrized_gait-exam):  jittered 20 s pass rate 0.94, 60 s 0.83
+  adopted recipe (22 walkers, long_walkers/P96_two-exam-passes):     jittered 20 s pass rate 0.65, 60 s 0.40
+
+| config | knobs | seeds | 20 s two-in-a-row pass | median ticks (IQR) | worst | Desmos min (median) | ref 20 s / 60 s bar | asym median (max) | mean abs torso deg median (max) | signed torso deg | torso std deg | speed m/s | airborne |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| adopted recipe, P96_two-exam-passes (L_chain2_cut_dec_P96_f2 + _c16) | adopted recipe | 0-23 | 22/24 | 35.9k (25.9k-52.7k) | inf | 28 | 22/22 , 10/22 | 0.366 (0.53) | 26.6 (30.2) | -15.4 | 25.2 | 0.93 | 0.14 |
+| RECOMMENDED symmetrized walk + gait exam (G_homo05_l3_bar + _c16) | exam asym<=0.15 exam torso<=8deg lean2=3 air2=8 anti2=0 decay2=0.05 | 0-23 | 14/24 | 77.7k (62.8k-inf) | inf | 60 | 14/14 , 13/14 | 0.014 (0.04) | 7.1 (8.0) | +3.3 | 8.2 | 1.23 | 0.01 |
+|   of which seeds 0-7 (G_homo05_l3_bar) | exam asym<=0.15 exam torso<=8deg lean2=3 air2=8 anti2=0 decay2=0.05 | 0-7 | 6/8 | 64.5k (48.5k-78.5k) | inf | 50 | 6/6 , 6/6 | 0.014 (0.04) | 6.8 (7.4) | +1.8 | 7.9 | 1.23 | 0.01 |
+|   of which seeds 8-23 (G_homo05_l3_bar_c16) | exam asym<=0.15 exam torso<=8deg lean2=3 air2=8 anti2=0 decay2=0.05 | 8-23 | 8/16 | inf (67.0k-inf) | inf | - | 8/8 , 7/8 | 0.013 (0.03) | 7.4 (8.0) | +3.9 | 8.5 | 1.23 | 0.01 |
+| same without the gait exam (G_homo05_l3 + _c16) | lean2=3 air2=8 anti2=0 decay2=0.05 | 0-23 | 14/24 | 74.0k (61.1k-inf) | inf | 57 | 14/14 , 12/14 | 0.015 (0.09) | 7.3 (9.1) | +3.3 | 8.5 | 1.21 | 0.01 |
+| G_homo05_l5_bar | exam asym<=0.15 exam torso<=8deg lean2=5 air2=8 anti2=0 decay2=0.05 | 0-7 | 6/8 | 67.1k (51.3k-84.4k) | inf | 52 | 6/6 , 4/6 | 0.006 (0.01) | 6.5 (7.3) | +1.1 | 7.6 | 1.17 | 0.01 |
+| G_anti50_homo05_l3_bar | anti=0.5 exam asym<=0.15 exam torso<=8deg lean2=3 air2=8 anti2=0 decay2=0.05 | 0-7 | 5/8 | 75.2k (55.3k-inf) | inf | 58 | 5/5 , 2/5 | 0.011 (0.02) | 7.0 (7.4) | +1.4 | 8.3 | 1.17 | 0.01 |
+| G_homo05s_l3_bar | exam asym<=0.15 exam torso<=8deg nu2=0.113 a2=0.113 lean2=3 air2=8 anti2=0 decay2=0.05 | 0-7 | 6/8 | 74.1k (57.7k-88.5k) | inf | 57 | 6/6 , 6/6 | 0.011 (0.02) | 7.3 (7.8) | +5.1 | 8.2 | 1.27 | 0.00 |
+| G_homo03_l3_bar | exam asym<=0.15 exam torso<=8deg lean2=3 air2=8 anti2=0 decay2=0.03 | 0-7 | 4/8 | inf (62.9k-inf) | inf | - | 4/4 , 3/4 | 0.016 (0.02) | 7.3 (7.9) | +1.9 | 7.9 | 1.25 | 0.00 |
+| G_homo10_l3_bar | exam asym<=0.15 exam torso<=8deg lean2=3 air2=8 anti2=0 decay2=0.1 | 0-7 | 3/8 | inf (49.7k-inf) | inf | - | 3/3 , 3/3 | 0.005 (0.02) | 7.8 (7.9) | +4.2 | 8.5 | 1.29 | 0.01 |
+| G_homo10p_l3_bar | exam asym<=0.15 exam torso<=8deg lean2=3 air2=8 anti2=0 decay2=0.1 decay-on-pass | 0-7 | 4/8 | inf (80.7k-inf) | inf | - | 4/4 , 2/4 | 0.026 (0.03) | 7.6 (7.9) | +2.9 | 7.3 | 1.18 | 0.01 |
+| G_homo05p_l3_bar | exam asym<=0.15 exam torso<=8deg lean2=3 air2=8 anti2=0 decay2=0.05 decay-on-pass | 0-7 | 3/8 | inf (72.0k-inf) | inf | - | 3/3 , 3/3 | 0.010 (0.03) | 7.0 (7.1) | +3.4 | 7.3 | 1.15 | 0.01 |
+| G_homoL10_l3_bar | exam asym<=0.15 exam torso<=8deg lean2=3 air2=8 anti2=0 decay2=0.05 decay-while-asym>=0.1 | 0-7 | 3/8 | inf (58.7k-inf) | inf | - | 3/3 , 2/3 | 0.021 (0.02) | 7.0 (7.1) | +3.4 | 8.0 | 1.19 | 0.01 |
+| G_homoL10a50_l3_bar | exam asym<=0.15 exam torso<=8deg lean2=3 air2=8 anti2=0.5 decay2=0.05 decay-while-asym>=0.1 | 0-7 | 3/8 | inf (72.7k-inf) | inf | - | 3/3 , 2/3 | 0.020 (0.04) | 7.5 (7.8) | +5.5 | 8.1 | 1.09 | 0.00 |
+| G_pre01_homo05_l3_bar | decay=0.01 exam asym<=0.15 exam torso<=8deg lean2=3 air2=8 anti2=0 decay2=0.05 | 0-7 | 5/8 | 97.4k (70.4k-inf) | inf | 75 | 5/5 , 3/5 | 0.018 (0.04) | 7.3 (7.5) | +0.2 | 7.5 | 1.12 | 0.01 |
+| G_homo05_asymbar | exam asym<=0.15 air2=8 anti2=0 decay2=0.05 | 0-7 | 3/8 | inf (64.7k-inf) | inf | - | 2/3 , 2/3 | 0.080 (0.10) | 17.3 (21.6) | -15.9 | 10.5 | 1.05 | 0.09 |
+| G_anti0_air8 | anti=0 air=8 | 0-7 | 2/8 | inf (33.5k-inf) | inf | - | 2/2 , 2/2 | 0.009 (0.02) | 8.5 (8.8) | +4.9 | 9.5 | 1.29 | 0.01 |
+| G_lean5_air8 | lean=5 air=8 | 0-7 | 4/8 | inf (53.5k-inf) | inf | - | 4/4 , 3/4 | 0.447 (0.45) | 5.1 (8.3) | +0.0 | 6.1 | 0.85 | 0.07 |
+
+Stopped before finishing (state at the last checkpoint):
+
+| config | knobs | seeds through / seeds | median ticks spent per seed | mean-row asym (last 20 episodes) | mean-row mean abs torso deg | mean-row airborne | mean-row passes of the last 20 |
+|---|---|---|---|---|---|---|---|
+| G_lean3 | lean=3 | 2/8 | 59.0k | 0.36 | 9.8 | 0.21 | 6 |
+| G_lean10 | lean=10 | 1/8 | 41.5k | 0.31 | 7.5 | 0.30 | 0 |
+| G_asym1.5 | asym=1.5 | 0/8 | 39.4k | 0.18 | 22.8 | 0.29 | 4 |
+| G_anti25 | anti=0.25 | 0/8 | 41.7k | 0.13 | 17.5 | 0.28 | 3 |
+| G_anti0_cap10 | anti=0 cap=1 | 0/8 | 52.2k | 0.12 | 18.0 | 0.26 | 7 |
+| G_asym1.5_lean5_air8 | lean=5 asym=1.5 air=8 | 0/8 | 68.5k | 0.11 | 5.4 | 0.17 | 0 |
+| G_post_l3a1_bar | exam asym<=0.15 exam torso<=8deg lean2=3 asym2=1 air2=8 | 0/8 | 64.1k | 0.26 | 8.1 | 0.11 | 11 |
+| G_post_l5a2_bar | exam asym<=0.15 exam torso<=8deg lean2=5 asym2=2 air2=8 | 0/8 | 53.1k | 0.19 | 7.4 | 0.22 | 4 |
+| G_anti0_airfree0 | anti=0 airfree=0 | 2/8 | 64.6k | 0.10 | 17.8 | 0.17 | 8 |
+| G_anti0_air8_free0 | anti=0 air=8 airfree=0 | 1/8 | 36.1k | 0.17 | 19.9 | 0.16 | 0 |
+| G_anti0s_air8_free0 | anti=0 air=8 airfree=0 nu=0.17 a=0.21 nu2=0.113 a2=0.113 | 0/8 | 9.3k | 0.83 | 29.5 | 0.26 | 0 |
+| G_anti0_air8_free0_post_l3_bar | anti=0 air=8 airfree=0 exam asym<=0.15 exam torso<=8deg lean2=3 | 1/8 | 44.0k | 0.15 | 14.6 | 0.21 | 0 |
+| G_anti0s_air8_post_l3_bar | anti=0 air=8 exam asym<=0.15 exam torso<=8deg nu=0.17 a=0.21 nu2=0.113 a2=0.113 lean2=3 | 3/8 | 85.6k | 0.10 | 10.6 | 0.19 | 6 |
+| G_homoX05_l3_bar | exam asym<=0.15 exam torso<=8deg lean2=3 air2=8 anti2=0 decay2=0.05 2-knobs from first exam | 0/8 | 51.4k | 0.15 | 13.3 | 0.26 | 5 |
+| G_homoX05p_l3_bar | exam asym<=0.15 exam torso<=8deg lean2=3 air2=8 anti2=0 decay2=0.05 decay-on-pass 2-knobs from first exam | 0/8 | 38.0k | 0.32 | 18.7 | 0.25 | 6 |
+| G_homoX10p_l3_bar | exam asym<=0.15 exam torso<=8deg lean2=3 air2=8 anti2=0 decay2=0.1 decay-on-pass 2-knobs from first exam | 0/8 | 59.0k | 0.15 | 14.0 | 0.23 | 6 |
+| G_homoX20p_l3_bar | exam asym<=0.15 exam torso<=8deg lean2=3 air2=8 anti2=0 decay2=0.2 decay-on-pass 2-knobs from first exam | 0/8 | 42.7k | 0.27 | 18.1 | 0.29 | 2 |
+| G_homo05_l3_bar_air3 | exam asym<=0.15 exam torso<=8deg lean2=3 anti2=0 decay2=0.05 | 1/8 | 85.0k | 0.06 | 8.8 | 0.20 | 8 |
+| G_homo05_l2_bar | exam asym<=0.15 exam torso<=8deg lean2=2 air2=8 anti2=0 decay2=0.05 | 2/8 | 55.9k | 0.12 | 10.9 | 0.21 | 8 |
+
+
+Notes.
+* The gaits are chaotic: for one walker the fast trainer (fastsim, batched) and ../sim.py differ by 8.5e-15 m after
+  1 s, 8.9e-8 m after 5 s and 2.8 m after 15 s (e-folding about 0.25 s); fastsim's own result for a row also depends on
+  the batch it runs in (floating-point summation order). So a training exam pass is a statement about one trajectory.
+  The one walker here whose two training exams did not reproduce in the reference (G_homo05_asymbar seed 7) is such a
+  case; the reference column and the jittered rates are the honest numbers.
+* G_anti0s_air8_free0 was stopped early (9k ticks) on the evidence of its two siblings (same idea, 1/8 at ~36-44k).
+* Stopped configs were killed when their median seed could no longer pass within 1.5x the adopted cost, or when
+  their mean rows showed the failure the row describes (airborne > 0.25, limp unchanged, exams falling).
+
+Recommended trade-off: "symmetrized walk + gait exam" (config G_homo05_l3_bar; walkers in long_walkers/P96_symmetrized_gait-exam)
+Before the first pass it is exactly the adopted recipe; three things switch on at the first passing episode (the flag
+P_e the graph already keeps for nu), and the exam gets two gait tests.
+  Unchanged: 97 bodies (48 antithetic directions + mean row), top 24; nu 0.12 -> 0.08 (noise from the episode after
+  the first pass), alpha 0.15 -> 0.08 (from the update right after it); 5 s chained windows (300 steps); a 20 s exam
+  from rest (1200 steps) after 2 passing windows in a row, cut when the mean row falls; a failed exam goes back to
+  windows from rest; stop after 2 passing exams in a row; bar: >= 0.8 m/s, no fall, >= 3 alternating single-support
+  phases per foot per 5 s, both feet up < 25% of steps.
+  Fitness, episodes after the first pass (the passing episode itself is scored the old way):
+      F = dist - 8 * max(0, air - 0.15 * alive) - 3 * L2,   L2 = sum over steps while upright of dt * theta^2
+      theta = torso angle in radians, atan2(head.x - hip.x, head.y - hip.y), the policy's first input, after the step;
+      "while upright" multiplies by the alive flag after the step, as F_air does. Before the first pass:
+      F = dist - 3 * max(0, air - 0.15 * alive) (unchanged).
+  Noise, from the episode after the first pass: D' = 0.5 * (D + s * D[I]), used in place of D both in the bodies'
+      parameters v(p) and in the update w_n. Parameter p = 13 a + o (a = 0 left hip, 1 left knee, 2 right hip,
+      3 right knee; o = the 13 inputs in sim.observe order). Its mirror partner is pi(p) = 13 ((a + 2) mod 4) + mu(o),
+      mu = (0, 1, 4, 5, 2, 3, 6, 7, 9, 8, 10, 11, 12), with sign s = -1 for o = 10, 11 (clock sin, cos), else +1.
+      In gen_desmos's layout D[n_d p + j] this is one constant index list I[n_d p + j] = n_d pi(p) + j and one sign
+      list, 52 * 48 = 2496 long each (one gather per episode).
+  Pull to symmetry, from the update right after the first pass (the same switch as alpha):
+      w_0 <- w_n - 0.025 * (w_n - s * w_n[pi])   (theta <- 0.975 theta + 0.025 mirror(theta); a 52-long gather)
+      With the noise above this shrinks the antisymmetric part of theta by 5% per update and never re-explores it.
+  Exam bar (exams only; windows keep the old bar), on the mean row, in addition to the old tests:
+      |S_L - S_R| <= 0.15 (S_L + S_R)   and   A_theta <= (8 pi / 180) * alive
+      S_L = sum dt * [left foot y < 0.001] * [right foot y >= 0.001] while upright, S_R the mirror, A_theta =
+      sum dt * |theta| while upright.
+  New per-episode state: L2 per body (97 numbers) and S_L, S_R, A_theta for the mean row (3 numbers, or per-body
+  lists for simplicity), reset with F_d / F_a / F_air and updated in every unrolled physics step like F_air.
+  Numpy knobs (long_train.py): w_lean2=3, w_air2=8, anti_scale2=0, sym_decay2=0.05, bar_asym=0.15, bar_lean=8,
+  gait_stages=[false, true] on top of config_L_chain2_cut_dec_P96_f2.json, budget 100k ticks.
+  What it costs (24 seeds): 14/24 seeds pass within 100k ticks (adopted: 22/24); median 77.7k ticks (2.2x the
+  adopted 35.9k), about 60 Desmos minutes at 22 steps/s, IQR 62.8k-inf; first 8 seeds alone 6/8 at 64.5k, next 16
+  8/16. What it buys (14 walkers, reference): asymmetry 0.014 (max 0.04, adopted 0.366), mean |torso| 7.1 deg (max
+  8.0, adopted 26.6), torso std 8.2 deg (adopted 25.2), airborne 1% (adopted 14%), 1.23 m/s, 20 s 14/14, 60 s 13/14
+  (adopted 10/22), jittered-start 20 s / 60 s pass rates 0.94 / 0.83 (adopted 0.65 / 0.40).

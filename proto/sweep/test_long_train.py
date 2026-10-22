@@ -104,6 +104,32 @@ def main():
 
     # 8. scaled phase requirement
     assert [lt.required_phases(s) for s in (5, 10, 20, 60)] == [3, 6, 12, 36]
+
+    # 9. gait knobs: the mirror image of an expanded symmetric policy is itself, the mirror is an involution,
+    #    a mirror-image policy on mirrored inputs gives the leg-swapped actions, anti_scale 0 noise is symmetric,
+    #    and the trainer's stance-asymmetry and |torso angle| accumulators equal verify_gait's statistics of an
+    #    ars.py trajectory
+    import verify_gait
+    E = sym_expand.expand(th_sym)
+    assert np.abs(lt.mirror_theta(E) - E).max() == 0.0
+    X = rng.standard_normal((6, 4, fs.N_OBS))
+    assert np.abs(lt.mirror_theta(lt.mirror_theta(X)) - X).max() == 0.0
+    obs = rng.standard_normal((fs.N_OBS, 3))
+    assert np.abs(lt.mirror_theta(X[0]) @ fs.mirror_obs(obs) - (X[0] @ obs)[[2, 3, 0, 1]]).max() < 1e-12
+    D = 0.5 * X + 0.5 * lt.mirror_theta(X)
+    assert np.abs(lt.mirror_theta(D) - D).max() < 1e-15
+    out = lt.rollout(thetas, ph, np.full(n, 300), np.full(n, -1), False, False)
+    for i in range(n):
+        r = ars.rollout(thetas[i:i + 1], T=300, record=True)
+        g = verify_gait.gait_stats(np.array(r["traj"]), bool(r["fallen"][0]), float(r["alive_t"][0]))
+        up = max(out["alive_t"][i], 1e-9)
+        assert abs(lt.limp(out)[i] - g["asym"]) < 1e-9, (i, lt.limp(out)[i], g["asym"])
+        assert abs(np.degrees(out["lean_abs"][i] / up) - g["abs_deg"]) < 1e-9, i
+    cfg_g = {**cfg, "bar_asym": 0.15, "bar_lean": 8.0}
+    ok_g = lt.gait_ok(out, np.arange(n), cfg_g)
+    want = (lt.limp(out) <= 0.15) & (np.degrees(out["lean_abs"] / np.maximum(out["alive_t"], 1e-9)) <= 8.0)
+    assert (ok_g == want).all()
+    print(f"gait knobs: mirror algebra exact, gait accumulators equal the reference, gait bar verdicts {ok_g.astype(int)}")
     print("all checks passed")
 
 

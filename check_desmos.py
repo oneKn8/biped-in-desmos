@@ -12,7 +12,7 @@ Data flows numpy -> page easily (file upload) but page -> here only in small pie
   window / exam  The same for the long-walk graph (gen_desmos --long): "window" is a 5 s window that
            continues a walk (start pose and clock offset carried from THETA's own 5 s walk from rest; also
            checks the next carry the graph computes), "exam" is a 20 s exam from rest that ends when the
-           mean row falls.
+           mean row falls. gwindow / gexam: the same for the gait graph (gen_desmos --gait), past the first pass.
 
 Usage: python3 check_desmos.py prepare THETA.npy|zero SEED graph.json expected.json [--dirs 64 --top 32]
        python3 check_desmos.py window|exam THETA.npy SEED graph.json expected.json [--dirs 48 --top 24]
@@ -76,10 +76,15 @@ def set_latex(st, prefix, latex):
     hits[0]["latex"] = latex
 
 
-def prepare_long(kind, theta_path, seed, graph_out, expected_out, N, b, nu1=0.12, nu2=0.08, alpha1=0.15, alpha2=0.08):
-    """One long-walk episode in numpy with the graph's layout; the graph gets numpy's noise and start."""
+def prepare_long(kind, theta_path, seed, graph_out, expected_out, N, b, nu1=0.12, nu2=0.08, alpha1=0.15, alpha2=0.08,
+                 gait=False, w_air2=8.0, w_lean2=3.0, lam=0.05, bar_asym=0.15, bar_lean=8.0):
+    """One long-walk episode in numpy with the graph's layout; the graph gets numpy's noise and start.
+    gait: the episode is past the first pass, so the noise is symmetrised (the graph is given the raw noise and
+    symmetrises it itself), fitness uses w_air2 / w_lean2, the update is pulled toward the mirror image, and an
+    exam also needs the gait limits."""
     theta = np.load(theta_path).reshape(sim.N_ACT, sim.N_OBS)
-    delta = np.random.default_rng(seed).standard_normal((N, sim.N_ACT, sim.N_OBS))
+    raw = np.random.default_rng(seed).standard_normal((N, sim.N_ACT, sim.N_OBS))
+    delta = 0.5 * raw + 0.5 * ars.mirror(raw) if gait else raw
     R = 2 * N + 1
     if kind == "window":                     # continue the policy's own 5 s walk from rest; past the first pass
         T, exam, P_e, nu = 300, 0, 1, nu2
@@ -90,11 +95,18 @@ def prepare_long(kind, theta_path, seed, graph_out, expected_out, N, b, nu1=0.12
     else:                                    # exam from rest, before any pass
         T, exam, P_e, nu = 1200, 1, 0, nu1
         t0, start = None, None
+    if gait:                                 # windows and exams in the gait phase both come after the first pass
+        P_e, nu = 1, nu2
     W = np.concatenate([theta + nu * delta, theta - nu * delta, theta[None]])
     out = ars.rollout(W, T, start=start, t0=None if t0 is None else np.full(R, t0), cut=bool(exam))
     passed = int(ars.passes(out, T)[-1])
-    st = gen_desmos.build(theta=theta, n_dir=N, top=b, playing=False, long_walk=True, nu=nu1, alpha=alpha1, nu2=nu2, alpha2=alpha2)
-    D = delta.reshape(N, -1).T.reshape(-1)
+    if gait and exam:                        # long_train.gait_ok on the mean row
+        limp = abs(out["s_l"][-1] - out["s_r"][-1]) / max(out["s_l"][-1] + out["s_r"][-1], 1e-9)
+        lean = np.degrees(out["lean_abs"][-1] / max(out["alive_t"][-1], 1e-9))
+        passed = int(passed and limp <= bar_asym and lean <= bar_lean)
+    st = gen_desmos.build(theta=theta, n_dir=N, top=b, playing=False, long_walk=True, nu=nu1, alpha=alpha1, nu2=nu2, alpha2=alpha2,
+                          gait=gait, w_air2=w_air2, w_lean2=w_lean2, sym_decay2=lam, bar_asym=bar_asym, bar_lean=bar_lean)
+    D = (raw if gait else delta).reshape(N, -1).T.reshape(-1)
     set_latex(st, "D=", "D=\\left[" + ",".join(gen_desmos.fx(v) for v in D) + "\\right]")
     set_latex(st, "X_{e}=", f"X_{{e}}={exam}")
     set_latex(st, "P_{e}=", f"P_{{e}}={P_e}")
@@ -104,9 +116,17 @@ def prepare_long(kind, theta_path, seed, graph_out, expected_out, N, b, nu1=0.12
         set_latex(st, "t_{0}=", "t_{0}=" + gen_desmos.fx(t0))
     st["expressions"]["ticker"]["handlerLatex"] = "\\left\\{k\\le T_{e}:A_{c}\\right\\}"
     json.dump(st, open(graph_out, "w"), separators=(",", ":"))
-    exp = dict(F_s=out["fit"].tolist(), F_d=out["dist"].tolist(), F_air=out["air_t"].tolist(),
-               A=out["alive"].tolist(), P_s=passed,
-               w_n=update(theta, out["fit"], delta, N, b, alpha2 if (P_e or passed) else alpha1).reshape(-1).tolist())
+    fit = out["fit"]
+    if gait:
+        pen = np.maximum(0.0, out["air_t"] - sim.AIR_FREE * out["alive_t"])
+        fit = out["dist"] - w_air2 * pen - w_lean2 * out["lean2"]
+    w_n = update(theta, fit, delta, N, b, alpha2 if (P_e or passed) else alpha1)
+    exp = dict(F_s=fit.tolist(), F_d=out["dist"].tolist(), F_air=out["air_t"].tolist(),
+               A=out["alive"].tolist(), P_s=passed, w_n=w_n.reshape(-1).tolist())
+    if gait:                                 # the pull toward the mirror image, and the gait sums
+        exp["w_u"] = (w_n - lam * 0.5 * (w_n - ars.mirror(w_n))).reshape(-1).tolist()
+        exp["F_l"] = out["lean2"].tolist()
+        exp["G"] = [float(out["s_l"][-1]), float(out["s_r"][-1]), float(out["lean_abs"][-1])]
     if kind == "window":                     # what the graph should carry into the next window if this one passed
         p1, q1 = ars.carry(out)
         exp["next_S"] = np.repeat(p1[None], R, 0).transpose(1, 0, 2).reshape(-1, 2).tolist()
@@ -136,7 +156,7 @@ def history(path):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("mode", choices=["prepare", "window", "exam", "history"])
+    ap.add_argument("mode", choices=["prepare", "window", "exam", "gwindow", "gexam", "history"])
     ap.add_argument("args", nargs="+")
     ap.add_argument("--dirs", type=int, default=64)
     ap.add_argument("--top", type=int, default=32)
@@ -144,8 +164,8 @@ if __name__ == "__main__":
     if a.mode == "prepare":
         th, seed, g_out, e_out = a.args
         prepare(th, int(seed), g_out, e_out, a.dirs, a.top)
-    elif a.mode in ("window", "exam"):
+    elif a.mode in ("window", "exam", "gwindow", "gexam"):
         th, seed, g_out, e_out = a.args
-        prepare_long(a.mode, th, int(seed), g_out, e_out, a.dirs, a.top)
+        prepare_long(a.mode.lstrip("g"), th, int(seed), g_out, e_out, a.dirs, a.top, gait=a.mode.startswith("g"))
     else:
         history(a.args[0])

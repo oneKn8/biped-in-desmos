@@ -24,7 +24,8 @@ def rollout(W, T=300, record=False, start=None, t0=None, cut=False):
     Returns a dict of per-row arrays: fit (training fitness), dist, alive_t, air_t (both feet up
     while upright, seconds), air_frac (both feet up, fraction of all T ticks), fallen (ever),
     n_left / n_right (alternating single-support phases), the final alive flags (0 for every body after
-    an exam cut), the final pos / prev, and traj (row 0 positions) if record.
+    an exam cut), the final pos / prev, traj (row 0 positions) if record, and the gait sums while upright:
+    lean2 (dt * torso angle^2), lean_abs (dt * |torso angle|), s_l / s_r (seconds in single support).
     """
     R = W.shape[0]
     pos, prev = sim.initial_state(R) if start is None else (start[0].copy(), start[1].copy())
@@ -34,6 +35,7 @@ def rollout(W, T=300, record=False, start=None, t0=None, cut=False):
     alive_t = np.zeros(R)
     air_t = np.zeros(R)
     air_ticks = np.zeros(R)
+    lean2 = np.zeros(R); lean_abs = np.zeros(R); s_l = np.zeros(R); s_r = np.zeros(R)
     fallen = np.zeros(R, bool)
     trk = walkbar.PhaseTracker(R)
     traj = []
@@ -53,6 +55,11 @@ def rollout(W, T=300, record=False, start=None, t0=None, cut=False):
         both_up = ~cl & ~cr
         air_t += alive * sim.DT * both_up
         air_ticks += both_up
+        th = np.arctan2(pos[:, sim.HEAD, 0] - pos[:, sim.HIP, 0], pos[:, sim.HEAD, 1] - pos[:, sim.HIP, 1])
+        lean2 += alive * sim.DT * th * th
+        lean_abs += alive * sim.DT * np.abs(th)
+        s_l += alive * sim.DT * (cl & ~cr)
+        s_r += alive * sim.DT * (cr & ~cl)
         trk.update(cl, cr, alive > 0)
         if record:
             traj.append(pos[0].copy())
@@ -60,13 +67,24 @@ def rollout(W, T=300, record=False, start=None, t0=None, cut=False):
     air_pen = np.maximum(0.0, air_t - sim.AIR_FREE * alive_t)
     fit = dist + sim.ALIVE_W * alive_t - sim.W_AIR * air_pen
     return dict(fit=fit, dist=dist, alive_t=alive_t, air_t=air_t, air_frac=air_ticks / T, fallen=fallen,
-                n_left=trk.cnt[0], n_right=trk.cnt[1], alive=alive, pos=pos, prev=prev, traj=traj)
+                n_left=trk.cnt[0], n_right=trk.cnt[1], alive=alive, pos=pos, prev=prev, traj=traj,
+                lean2=lean2, lean_abs=lean_abs, s_l=s_l, s_r=s_r)
 
 
 def passes(out, T):
     """The strict bar over T ticks, phases scaled with the horizon."""
     return walkbar.strict_bar(out["dist"], T * sim.DT, out["fallen"], out["n_left"], out["n_right"], out["air_frac"],
                               phases=walkbar.phases_needed(T * sim.DT))
+
+
+MIRROR_OBS = [0, 1, 4, 5, 2, 3, 6, 7, 9, 8, 10, 11, 12]     # inputs of the other leg; clock shifted by half a period
+MIRROR_SGN = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, 1]
+
+
+def mirror(theta):
+    """Mirror image of policies (..., N_ACT, N_OBS): the legs' rows swapped, every row's inputs mirrored."""
+    t = np.asarray(theta)
+    return np.concatenate([t[..., 2:, :], t[..., :2, :]], -2)[..., MIRROR_OBS] * np.array(MIRROR_SGN, float)
 
 
 def carry(out, row=-1):

@@ -1,0 +1,116 @@
+{
+ "k": 20,
+ "sigma": 0.001,
+ "rows": [
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s0.npy",
+   "jitter20": 0.15,
+   "jitter60": 0.0
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s1.npy",
+   "jitter20": 0.7,
+   "jitter60": 0.55
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s2.npy",
+   "jitter20": 0.1,
+   "jitter60": 0.05
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s3.npy",
+   "jitter20": 0.9,
+   "jitter60": 0.45
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s4.npy",
+   "jitter20": 0.65,
+   "jitter60": 0.3
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s5.npy",
+   "jitter20": 0.5,
+   "jitter60": 0.15
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s6.npy",
+   "jitter20": 1.0,
+   "jitter60": 1.0
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s7.npy",
+   "jitter20": 0.85,
+   "jitter60": 0.6
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s8.npy",
+   "jitter20": 0.95,
+   "jitter60": 0.95
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s11.npy",
+   "jitter20": 0.25,
+   "jitter60": 0.0
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s12.npy",
+   "jitter20": 0.55,
+   "jitter60": 0.35
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s13.npy",
+   "jitter20": 0.75,
+   "jitter60": 0.4
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s14.npy",
+   "jitter20": 0.85,
+   "jitter60": 0.5
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s15.npy",
+   "jitter20": 0.95,
+   "jitter60": 0.85
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s16.npy",
+   "jitter20": 0.6,
+   "jitter60": 0.15
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s17.npy",
+   "jitter20": 0.6,
+   "jitter60": 0.2
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s18.npy",
+   "jitter20": 0.95,
+   "jitter60": 0.85
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s19.npy",
+   "jitter20": 0.4,
+   "jitter60": 0.25
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s20.npy",
+   "jitter20": 0.75,
+   "jitter60": 0.3
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s21.npy",
+   "jitter20": 0.85,
+   "jitter60": 0.45
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s22.npy",
+   "jitter20": 0.3,
+   "jitter60": 0.1
+  },
+  {
+   "file": "long_walkers/P96_two-exam-passes/theta_pass20_s23.npy",
+   "jitter20": 0.65,
+   "jitter60": 0.35
+  }
+ ]
+}
