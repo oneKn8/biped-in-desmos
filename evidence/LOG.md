@@ -1,6 +1,6 @@
 # Biped evidence log
 
-Every claim we might post gets a file here and a line below: date, file, what it shows, the number. Newest at the bottom. Agents add their own lines.
+Every claim we might post gets a file here and a line below: date, file, what it shows, the number. Newest at the bottom.
 
 | When (CDT) | File | What it shows |
 |---|---|---|
