@@ -3,7 +3,8 @@ files behind the two saved graphs, and numpy training from seed 0 reaches the wa
 
 Which generation seed 0 passes at depends on the CPU: numpy picks vectorised code by instruction set, and the
 last-bit differences grow through the chaotic walk (generation 13 on the laptop the README was written on, 26 there
-with AVX2 turned off, 19 on GitHub's runners). So the generation is printed, not asserted.
+with AVX2 turned off; 19 on one GitHub runner, 13 on others). So the generation is printed, with the CPU features
+numpy found, not asserted.
 
 The hashes are of the files that were loaded into https://www.desmos.com/calculator/zzd5dnayog and
 https://www.desmos.com/calculator/yywath1bwc; on 2026-10-24 every expression of both saved graphs matched these files.
@@ -24,6 +25,15 @@ SAVED_GRAPHS = {
 TIMEOUT_S = 600
 
 
+def simd_features():
+    """The vector instruction sets numpy dispatches to here, for the printout (numpy keeps this table private)."""
+    try:
+        from numpy._core._multiarray_umath import __cpu_features__
+    except ImportError:
+        return "unknown"
+    return " ".join(k for k in ("AVX2", "FMA3", "AVX512F", "AVX512_SKX", "ASIMD") if __cpu_features__.get(k)) or "baseline only"
+
+
 def run(args, cwd):
     p = subprocess.run([sys.executable, *args], cwd=cwd, capture_output=True, text=True, timeout=TIMEOUT_S)
     assert p.returncode == 0, f"{' '.join(args)} failed ({p.returncode}):\n{p.stderr[-2000:]}"
@@ -41,7 +51,7 @@ def main():
         log = run([os.path.join(HERE, "proto", "ars.py"), "200", "0"], tmp)
         passed = re.search(r"seed 0: mean policy passed the strict bar at generation (\d+) ", log)
         assert passed, "numpy seed 0 no longer reaches the walking test within 200 generations:\n" + log[-2000:]
-    print(f"numpy seed 0 passed at generation {passed.group(1)} on this machine")
+    print(f"numpy seed 0 passed at generation {passed.group(1)} on this machine (numpy SIMD: {simd_features()})")
     print("all checks passed")
 
 
