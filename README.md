@@ -55,6 +55,7 @@ Every episode, practice or exam, also updates the weights; after the first pass 
 - One 5 s episode of all 129 bodies agrees to about 2e-12 in fitness and 2e-14 in the learned update, with the same falls, step counts and verdict.
 - For the second graph, a practice window that continues a walk (including the carried pose and clock) and a 20 s exam also match, and the weights learned inside Desmos, re-run in numpy, walk 17.683 m in 20 s against the graph's 17.684 m.
 - Rounding differences grow over long walks because the gait is chaotic: they reached 1e-9 to 1e-6 m over 20 s in our checks, and metres within 15 s for one unstable walker in the sweeps. So long walks are compared on falls and verdicts, not to the last digit.
+- On every push, GitHub Actions runs the numpy side: the trainer tests, and `test_readme_claims.py`, which checks that `gen_desmos.py` still writes the exact files behind both saved graphs and that numpy seed 0 still passes at generation 13. The comparison against Desmos itself needs a browser, so `check_desmos.py` is run by hand.
 
 ## Results
 
@@ -65,7 +66,7 @@ Every episode, practice or exam, also updates the weights; after the first pass 
 | 5 s graph, inside Desmos | Two from-zero runs with different seeds both passed, at generation 17 (5.53 m) and 16 (5.28 m); the second is the saved graph. 4.9 minutes on a 15 W laptop CPU (Intel i7-1255U, no GPU). |
 | Long-walk graph, inside Desmos | Passed the 20 s exam twice in a row after 193 episodes and 42 minutes. Its walker covers 17.7 m in 20 s from a standing start. |
 | Training recipes | Chosen in numpy, not guessed: 62 configurations for the 5 s recipe (24 of 24 seeds pass, median 5.3k simulated steps, about ten times fewer than the first recipe), and a second sweep for the long walk (22 of 24 seeds, median 36k steps). Tables in `proto/sweep/results_all.txt` and `results_long.txt`. |
-| Limits | The learned gait limps (one stance is longer) and the torso pitches a lot. The long walker falls at 42 s, and with its start pose nudged by up to 1 mm, 64% of its 20 s walks still pass. |
+| Limits | The learned gait limps (one stance is longer) and the torso pitches a lot. The long walker falls at 42 s, and with its start pose nudged by up to 1 mm, 64% of its 20 s walks still pass. The physics is simplified: motors turn joints toward their targets by a capped angle each step, with no torque, energy or actuator model, so this is learned walking in a simulation, not a controller for a real robot. |
 
 ### Next: fixing the limp (built and checked, not yet finished inside Desmos)
 
@@ -79,7 +80,7 @@ This builds on what the Desmos community has already shown is possible: the Jell
 
 ## Run it yourself
 
-Requirements: Python 3 with numpy (and matplotlib for the figures).
+Requirements: Python 3 with numpy and matplotlib (`pip install -r requirements.txt` gives the versions the results were made with).
 
 ```bash
 python3 proto/ars.py 200 0                                   # train in numpy until the walking test passes (seed 0: generation 13)
@@ -89,6 +90,7 @@ python3 gen_desmos.py long.json --long --dirs 48 --top 24 --paused   # the long-
 python3 gen_desmos.py gait.json --gait --dirs 48 --top 24    # the gait recipe
 python3 gen_desmos.py walker.json --theta theta_s0.npy --nu 0     # replay a numpy-trained walker in Desmos
 python3 check_desmos.py prepare zero 12 test.json expected.json   # an episode to compare against numpy
+python3 test_readme_claims.py                                # the saved graph files and the generation-13 claim
 cd proto/sweep && python3 test_train.py && python3 test_long_train.py   # trainer tests
 ```
 
@@ -100,6 +102,7 @@ To load a generated file: open https://www.desmos.com/calculator, open the brows
 |---|---|
 | `gen_desmos.py` | Writes the Desmos graphs (5 s, `--long`, `--gait`). |
 | `check_desmos.py` | Builds test episodes with numpy's noise baked in, and the numpy results to compare with. |
+| `test_readme_claims.py` | Checks the README's numpy-checkable claims; CI runs it with the trainer tests (`.github/workflows/tests.yml`). |
 | `proto/` | The numpy reference: `sim.py` (physics), `walkbar.py` (walking test), `ars.py` (learning), `render.py` (filmstrips). |
 | `proto/sweep/` | The recipe sweeps behind every training choice, their result tables, tests, and the trained walkers. |
 | `evidence/` | Screenshots, filmstrips and curves; `evidence/LOG.md` gives the numbers behind every claim. |

@@ -12,12 +12,13 @@ Usage: python3 gen_desmos.py out_state.json [--theta proto/theta_s0.npy --nu 0] 
 """
 import argparse
 import json
+import os
 import re
 import sys
 
 import numpy as np
 
-sys.path.insert(0, 'proto')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "proto"))
 import sim  # noqa: E402  sim lives in proto/, which the line above puts on the path
 import walkbar  # noqa: E402  imported after the sys.path insert above, which adds proto/
 

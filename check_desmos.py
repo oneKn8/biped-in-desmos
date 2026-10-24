@@ -20,11 +20,12 @@ Usage: python3 check_desmos.py prepare THETA.npy|zero SEED graph.json expected.j
 """
 import argparse
 import json
+import os
 import sys
 
 import numpy as np
 
-sys.path.insert(0, 'proto')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "proto"))
 import ars  # noqa: E402  ars lives in proto/, which the line above puts on the path
 import sim  # noqa: E402  imported after the sys.path insert above, which adds proto/
 import gen_desmos  # noqa: E402  it imports sim from proto/, so it must follow the sys.path insert above
