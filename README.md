@@ -77,7 +77,13 @@ Every episode, practice or exam, also updates the weights; after the first pass 
 
 ## Related work in Desmos
 
-This builds on what the Desmos community has already shown is possible: the JellyCar soft-body physics graph (https://www.reddit.com/r/desmos/comments/1rmyv7z/), a policy network trained in a graph (https://www.desmos.com/calculator/khjvuysihr), Q-learning in Desmos (https://www.reddit.com/r/desmos/comments/s6t5z4/), and evolved neural-network dot agents (https://www.reddit.com/r/desmos/comments/1lr1sru/).
+As far as we could find, nobody had trained a walking body inside Desmos before, but this stands on a lot of community work. We searched the text of all 27,442 r/desmos posts up to 2026-10-24, plus YouTube, X, Hacker News and GitHub:
+
+- **Walking** in Desmos has so far been animation: procedural inverse-kinematics walkers such as a [3D spider](https://www.reddit.com/r/desmos/comments/1hc7vpa/), and keyframed stick figures, with no dynamics and no learning.
+- **Learning** in Desmos: [Q-learning](https://www.reddit.com/r/desmos/comments/s6t5z4/), neural networks [trained by evolution to steer dots](https://www.reddit.com/r/desmos/comments/1lr1sru/), a [recurrent network trained in a graph to steer a thrusting dot](https://www.reddit.com/r/desmos/comments/1qsuwip/), and a sprite that [learns to dodge obstacles with reinforcement learning](https://www.desmos.com/calculator/khjvuysihr).
+- **Physics** in Desmos: the [JellyCar soft-body graph](https://www.reddit.com/r/desmos/comments/1rmyv7z/) and many particle and gravity simulations.
+
+What we did not find is an articulated body with contact physics whose controller is learned inside the graph. The search matched keywords in post titles and text, so a post with a vague title and only a video could have slipped past it.
 
 ## Run it yourself
 
