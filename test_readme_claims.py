@@ -1,5 +1,9 @@
 """Checks for claims the README makes that numpy can verify without Desmos: the generator still writes the exact
-files behind the two saved graphs, and numpy seed 0 still passes the walking test at generation 13.
+files behind the two saved graphs, and numpy training from seed 0 reaches the walking test.
+
+Which generation seed 0 passes at depends on the CPU: numpy picks vectorised code by instruction set, and the
+last-bit differences grow through the chaotic walk (generation 13 on the laptop the README was written on, 26 there
+with AVX2 turned off, 19 on GitHub's runners). So the generation is printed, not asserted.
 
 The hashes are of the files that were loaded into https://www.desmos.com/calculator/zzd5dnayog and
 https://www.desmos.com/calculator/yywath1bwc; on 2026-10-24 every expression of both saved graphs matched these files.
@@ -7,6 +11,7 @@ The Desmos-against-numpy comparison itself needs a browser: see check_desmos.py.
 """
 import hashlib
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -34,8 +39,9 @@ def main():
                 got = hashlib.sha256(f.read()).hexdigest()
             assert got == want, f"gen_desmos.py no longer writes the file behind {name}: sha256 {got}"
         log = run([os.path.join(HERE, "proto", "ars.py"), "200", "0"], tmp)
-        assert "seed 0: mean policy passed the strict bar at generation 13 " in log, \
-            "numpy seed 0 no longer passes at generation 13, as the README says:\n" + log[-2000:]
+        passed = re.search(r"seed 0: mean policy passed the strict bar at generation (\d+) ", log)
+        assert passed, "numpy seed 0 no longer reaches the walking test within 200 generations:\n" + log[-2000:]
+    print(f"numpy seed 0 passed at generation {passed.group(1)} on this machine")
     print("all checks passed")
 
 

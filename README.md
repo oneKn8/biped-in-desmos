@@ -15,7 +15,7 @@ A population of stick-figure ragdolls starts with blank controllers and learns t
 | **[Learns to walk](https://www.desmos.com/calculator/zzd5dnayog)** | 129 bodies learn from zero. Learning stops by itself the first time the average walker passes the walking test (generation 16, 5.28 m in 5 s), then the graph replays that walk. | about 5 minutes |
 | **[Learns to keep walking](https://www.desmos.com/calculator/yywath1bwc)** | 97 bodies practise on 5 s windows that continue their own walk and take a 20 s walk from a standing start as an exam. Learning stops after two exam passes in a row, then it replays the 20 s walk with the camera following. | about 40 minutes |
 
-Collapse the expression list (the arrows at its top right), then press play on the ticker. Both runs are deterministic: the graph pins Desmos's random seed, so everyone sees the same run.
+Collapse the expression list (the arrows at its top right), then press play on the ticker. Both graphs pin Desmos's random seed, so every run draws the same noise. In Chrome on the laptop we built them on, reloading the first saved graph reproduced its original run to 6 digits (it stops at generation 16 with 5.283039 m). We have not tested other browsers or CPUs, and as the numpy note below shows, last-digit differences can grow into a different run.
 
 <p align="center">
   <img src="docs/keeps-walking.gif" alt="The walker learned in the second graph, walking from a standing start inside Desmos while the camera follows it" width="820">
@@ -55,7 +55,8 @@ Every episode, practice or exam, also updates the weights; after the first pass 
 - One 5 s episode of all 129 bodies agrees to about 2e-12 in fitness and 2e-14 in the learned update, with the same falls, step counts and verdict.
 - For the second graph, a practice window that continues a walk (including the carried pose and clock) and a 20 s exam also match, and the weights learned inside Desmos, re-run in numpy, walk 17.683 m in 20 s against the graph's 17.684 m.
 - Rounding differences grow over long walks because the gait is chaotic: they reached 1e-9 to 1e-6 m over 20 s in our checks, and metres within 15 s for one unstable walker in the sweeps. So long walks are compared on falls and verdicts, not to the last digit.
-- On every push, GitHub Actions runs the numpy side: the trainer tests, and `test_readme_claims.py`, which checks that `gen_desmos.py` still writes the exact files behind both saved graphs and that numpy seed 0 still passes at generation 13. The comparison against Desmos itself needs a browser, so `check_desmos.py` is run by hand.
+- The same chaos makes numpy training depend on the CPU. numpy picks vectorised code by instruction set, and its last-bit differences grow through the walk: seed 0 passes at generation 13 on our laptop, at 26 on the same laptop with AVX2 turned off, and at 19 on GitHub's runners. So the tests check that training passes, not at which generation.
+- On every push, GitHub Actions runs the numpy side: the trainer tests, and `test_readme_claims.py`, which checks that `gen_desmos.py` still writes the exact files behind both saved graphs and that numpy training from seed 0 still reaches the walking test. The comparison against Desmos itself needs a browser, so `check_desmos.py` is run by hand.
 
 ## Results
 
@@ -83,7 +84,7 @@ This builds on what the Desmos community has already shown is possible: the Jell
 Requirements: Python 3 with numpy and matplotlib (`pip install -r requirements.txt` gives the versions the results were made with).
 
 ```bash
-python3 proto/ars.py 200 0                                   # train in numpy until the walking test passes (seed 0: generation 13)
+python3 proto/ars.py 200 0                                   # train in numpy until the walking test passes (seed 0: generation 13 on our laptop; it depends on the CPU)
 python3 proto/render.py theta_s0.npy strip.png               # filmstrip of the learned gait
 python3 gen_desmos.py learn.json --paused                    # the 5 s learning graph (byte-identical to the first saved graph's file)
 python3 gen_desmos.py long.json --long --dirs 48 --top 24 --paused   # the long-walk graph (byte-identical to the second one's)
