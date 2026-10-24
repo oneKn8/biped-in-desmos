@@ -55,7 +55,7 @@ def build(theta=None, nu=0.12, alpha=0.15, n_dir=64, top=32, episode=300, playin
     bar_lean degrees. That is long_train.py's G_homo05_l3_bar recipe. start_passed starts past the first pass
     (to polish a walker given by theta).
 
-    Measured cost model (NOTES.md, 2026-10-21/22): every statement downstream of the action-written
+    Measured cost model (2026-10-21/22 notes): every statement downstream of the action-written
     state is re-analysed by the worker on every tick and also costs main-thread progress messages;
     the action's write-back of the state literals is re-parsed every tick; after that, cost is
     roughly per list operation, so it grows with population. So: one vectorised formula per family

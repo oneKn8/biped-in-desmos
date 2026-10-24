@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+.venv/
+out/
+out_*.json
+# working notes stay local
+BRIEF.md
+WORK_QUEUE.md
+post/
+# numpy training output written next to the scripts
+proto/*.npy
+proto/hist_*.json
+proto/log_*.txt
+proto/*.png
+proto/alive*/*
+!proto/alive1/theta_s*.npy
+proto/sweep/runs/
+proto/sweep/runs_stopped/
+proto/sweep/*.log
+proto/sweep/cfg_pop/*.out
+# screen recordings are large; they are posted, not committed
+*.mp4
