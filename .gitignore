@@ -1,8 +1,13 @@
 __pycache__/
 *.pyc
 .venv/
+.ruff_cache/
 out/
 out_*.json
+# files the README's commands write next to the scripts
+/*.json
+/*.npy
+/*.png
 # working notes stay local
 BRIEF.md
 WORK_QUEUE.md

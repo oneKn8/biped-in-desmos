@@ -84,8 +84,8 @@ Requirements: Python 3 with numpy (and matplotlib for the figures).
 ```bash
 python3 proto/ars.py 200 0                                   # train in numpy until the walking test passes (seed 0: generation 13)
 python3 proto/render.py theta_s0.npy strip.png               # filmstrip of the learned gait
-python3 gen_desmos.py learn.json                             # the 5 s learning graph (the first saved graph)
-python3 gen_desmos.py long.json --long --dirs 48 --top 24    # the long-walk graph (the second saved graph)
+python3 gen_desmos.py learn.json --paused                    # the 5 s learning graph (byte-identical to the first saved graph's file)
+python3 gen_desmos.py long.json --long --dirs 48 --top 24 --paused   # the long-walk graph (byte-identical to the second one's)
 python3 gen_desmos.py gait.json --gait --dirs 48 --top 24    # the gait recipe
 python3 gen_desmos.py walker.json --theta theta_s0.npy --nu 0     # replay a numpy-trained walker in Desmos
 python3 check_desmos.py prepare zero 12 test.json expected.json   # an episode to compare against numpy
