@@ -3,7 +3,7 @@ files behind the two saved graphs, and numpy training from seed 0 reaches the wa
 
 Which generation seed 0 passes at depends on the CPU: numpy picks vectorised code by instruction set, and the
 last-bit differences grow through the chaotic walk (generation 13 on the laptop the README was written on, 26 there
-with AVX2 turned off; 19 on one GitHub runner, 13 on others). So the generation is printed, with the CPU features
+with AVX2 turned off; 19 on a GitHub runner with AVX-512, 13 on one with AVX2 only). So the generation is printed, with the CPU features
 numpy found, not asserted.
 
 The hashes are of the files that were loaded into https://www.desmos.com/calculator/zzd5dnayog and
